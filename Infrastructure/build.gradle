@@ -1,0 +1,15 @@
+plugins {
+    id 'common-conventions'
+}
+
+group = 'com.health'
+version = '0.1'
+
+dependencies {
+    // Shared libraries
+    api 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    
+    api 'jakarta.inject:jakarta.inject-api:2.0.1'
+}

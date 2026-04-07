@@ -1,0 +1,24 @@
+plugins {
+    id 'service-conventions'
+    id 'common-conventions'
+}
+
+dependencies {
+    implementation project(':Common')
+    implementation project(':Infrastructure')
+    implementation 'ch.hsr:geohash:1.4.0'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+}
+
+application {
+    mainClass = 'com.health.patient.Application'
+}
+
+micronaut {
+    processing {
+        annotations('com.health.patient.*')
+        annotations('com.health.infrastructure.*')
+    }
+}

@@ -1,0 +1,6 @@
+applicationType: grpc
+defaultPackage: com.module
+testFramework: junit
+sourceLanguage: java
+buildTool: gradle
+features: [app-name, cassandra, discovery-core, gradle, grpc, http-client-test, java, java-application, junit, junit-platform-suite-engine, logback, lombok, micronaut-build, mockito, properties, readme, security, security-annotations, security-jwt, serialization-jackson, shade]

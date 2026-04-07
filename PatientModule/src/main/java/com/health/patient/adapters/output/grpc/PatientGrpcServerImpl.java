@@ -1,0 +1,259 @@
+package com.health.patient.adapters.output.grpc;
+
+import com.health.grpc.auth.ValidateTokenRequest;
+import com.health.grpc.auth.ValidateTokenResponse;
+import com.health.grpc.doctor.*;
+import com.health.grpc.patient.*;
+import com.health.patient.application.*;
+import com.health.patient.domain.exception.DomainException;
+import com.health.patient.domain.model.Patient;
+import io.grpc.Status;
+import io.grpc.stub.StreamObserver;
+import jakarta.inject.Singleton;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.UUID;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Singleton
+public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcServiceImplBase {
+
+    private final CreatePatientUseCaseInterface createPatientUseCase;
+    private final GetPatientUseCaseInterface getPatientUseCase;
+    private final RegisterPatientUseCaseInterface registerPatientUseCase;
+    private final ValidateTokenUseCaseInterface validateTokenUseCase;
+    private final DoctorGrpcClient doctorGrpcClient;
+
+    public PatientGrpcServerImpl(
+            CreatePatientUseCaseInterface createPatientUseCase,
+            GetPatientUseCaseInterface getPatientUseCase,
+            RegisterPatientUseCaseInterface registerPatientUseCase,
+            ValidateTokenUseCaseInterface validateTokenUseCase,
+            DoctorGrpcClient doctorGrpcClient
+    ) {
+        this.createPatientUseCase = createPatientUseCase;
+        this.getPatientUseCase = getPatientUseCase;
+        this.registerPatientUseCase = registerPatientUseCase;
+        this.validateTokenUseCase = validateTokenUseCase;
+        this.doctorGrpcClient = doctorGrpcClient;
+    }
+
+    // ===================== COMMON HELPERS =====================
+
+    private <T> void handle(StreamObserver<T> observer, Supplier<T> supplier) {
+        try {
+            T response = supplier.get();
+            observer.onNext(response);
+            observer.onCompleted();
+        } catch (DomainException e) {
+            log.warn("Domain error: {}", e.getMessage());
+            observer.onError(e.getGrpcStatus()
+                    .withDescription(e.getMessage())
+                    .asRuntimeException());
+        } catch (SecurityException e) {
+            log.warn("Security error: {}", e.getMessage());
+            observer.onError(Status.PERMISSION_DENIED
+                    .withDescription(e.getMessage())
+                    .asRuntimeException());
+        } catch (Exception e) {
+            log.error("Unexpected error", e);
+            observer.onError(Status.INTERNAL
+                    .withDescription("An internal error occurred")
+                    .asRuntimeException());
+        }
+    }
+
+    /**
+     * Ensures that the authenticated user is only accessing their own data.
+     */
+    private void ensureSelf(String requestedPatientId) {
+        String authenticatedUserId = AuthInterceptor.USER_ID_KEY.get();
+        if (authenticatedUserId == null || !authenticatedUserId.equals(requestedPatientId)) {
+            throw new SecurityException("Access denied: You can only access your own information.");
+        }
+    }
+
+    // ===================== AUTH =====================
+
+    @Override
+    public void patientLogin(PatientLoginRequest request,
+                             StreamObserver<PatientLoginResponse> observer) {
+        handle(observer, () ->
+                registerPatientUseCase.login(request.getEmail(), request.getPassword())
+        );
+    }
+
+    @Override
+    public void validatePatientToken(ValidateTokenRequest request,
+                                     StreamObserver<ValidateTokenResponse> observer) {
+        handle(observer, () ->
+                validateTokenUseCase.execute(request.getToken())
+        );
+    }
+
+    @Override
+    public void registerPatient(RegisterPatientRequest request,
+                                StreamObserver<RegisterPatientResponse> observer) {
+        handle(observer, () -> {
+            UUID id = registerPatientUseCase.execute(
+                    request.getName(), request.getEmail(), request.getPassword(), request.getPhone()
+            );
+            return RegisterPatientResponse.newBuilder()
+                    .setPatientId(id.toString())
+                    .setMessage("Patient registered successfully")
+                    .build();
+        });
+    }
+
+    // ===================== PATIENT =====================
+
+    @Override
+    public void createPatient(CreatePatientRequest request,
+                              StreamObserver<CreatePatientResponse> observer) {
+        handle(observer, () -> {
+            UUID id = createPatientUseCase.execute(request.getName(), request.getEmail(), request.getPhone(),request.getPassword());
+            return CreatePatientResponse.newBuilder()
+                    .setPatientId(id.toString())
+                    .setMessage("Patient created successfully")
+                    .build();
+        });
+    }
+
+    @Override
+    public void getPatient(GetPatientRequest request,
+                           StreamObserver<GetPatientResponse> observer) {
+        handle(observer, () -> {
+            ensureSelf(request.getPatientId());
+            Patient p = getPatientUseCase.execute(UUID.fromString(request.getPatientId()))
+                    .orElseThrow(() -> new DomainException("Patient not found", Status.NOT_FOUND));
+
+            return GetPatientResponse.newBuilder()
+                    .setPatientId(p.getId().toString())
+                    .setName(p.getName())
+                    .setEmail(p.getEmail())
+                    .setPhone("") // TODO: Add phone to Patient domain model if needed
+                    .build();
+        });
+    }
+
+    @Override
+    public void patientExists(PatientExistsRequest request,
+                              StreamObserver<PatientExistsResponse> observer) {
+        handle(observer, () -> {
+            boolean exists = getPatientUseCase
+                    .execute(UUID.fromString(request.getPatientId()))
+                    .isPresent();
+            return PatientExistsResponse.newBuilder()
+                    .setExists(exists)
+                    .build();
+        });
+    }
+
+    // ===================== DOCTOR PROXY =====================
+
+    @Override
+    public void getNearbyDoctors(NearbyDoctorsProxyRequest request,
+                                 StreamObserver<NearbyDoctorsProxyResponse> observer) {
+        handle(observer, () -> {
+            var doctors = doctorGrpcClient.getNearbyDoctors(request.getLocationText())
+                    .stream()
+                    .map(this::mapDoctor)
+                    .collect(Collectors.toList());
+            return NearbyDoctorsProxyResponse.newBuilder().addAllDoctors(doctors).build();
+        });
+    }
+
+    @Override
+    public void getDoctorsByLocation(ByLocationProxyRequest request,
+                                     StreamObserver<ByLocationProxyResponse> observer) {
+        handle(observer, () -> {
+            var doctors = doctorGrpcClient.getDoctorsByLocation(request.getGeohashPrefix())
+                    .stream()
+                    .map(this::mapDoctor)
+                    .collect(Collectors.toList());
+            return ByLocationProxyResponse.newBuilder().addAllDoctors(doctors).build();
+        });
+    }
+
+    @Override
+    public void getDoctorSchedule(ScheduleProxyRequest request,
+                                  StreamObserver<ScheduleProxyResponse> observer) {
+        handle(observer, () -> {
+            GetScheduleResponse s = doctorGrpcClient.getDoctorSchedule(request.getDoctorId());
+            return ScheduleProxyResponse.newBuilder()
+                    .addAllWorkingDays(s.getWorkingDaysList())
+                    .setStartTime(s.getStartTime())
+                    .setEndTime(s.getEndTime())
+                    .setSlotDurationMinutes(s.getSlotDurationMinutes())
+                    .setMaxAppointmentsDay(s.getMaxAppointmentsDay())
+                    .build();
+        });
+    }
+
+    // ===================== APPOINTMENTS =====================
+
+    @Override
+    public void bookAppointment(BookAppointmentRequest request,
+                                StreamObserver<BookAppointmentResponse> observer) {
+        handle(observer, () -> {
+            ensureSelf(request.getPatientId());
+            com.health.grpc.doctor.CreateAppointmentResponse res =
+                    doctorGrpcClient.createAppointment(request.getDoctorId(), request.getPatientId(), request.getDate(), request.getTime());
+
+            return BookAppointmentResponse.newBuilder()
+                    .setSuccess(res.getSuccess())
+                    .setAppointmentId(res.getAppointmentId())
+                    .setMessage(res.getMessage())
+                    .build();
+        });
+    }
+
+    @Override
+    public void cancelAppointment(CancelAppointmentRequest request,
+                                  StreamObserver<CancelAppointmentResponse> observer) {
+        handle(observer, () -> {
+            ensureSelf(request.getPatientId());
+            com.health.grpc.doctor.CancelAppointmentResponse res = doctorGrpcClient.cancelAppointment(
+                    request.getAppointmentId(), request.getPatientId(), "", "", ""
+            );
+            return CancelAppointmentResponse.newBuilder()
+                    .setSuccess(res.getSuccess())
+                    .setMessage(res.getMessage())
+                    .build();
+        });
+    }
+
+    @Override
+    public void getMyAppointments(MyAppointmentsRequest request,
+                                  StreamObserver<MyAppointmentsResponse> observer) {
+        handle(observer, () -> {
+            ensureSelf(request.getPatientId());
+            var appointments = doctorGrpcClient.getMyAppointments(request.getPatientId(), request.getDate())
+                    .stream()
+                    .map(a -> AppointmentInfo.newBuilder()
+                            .setAppointmentId(a.getAppointmentId())
+                            .setDoctorId(a.getDoctorId())
+                            .setPatientId(a.getPatientId())
+                            .setDate(a.getDate())
+                            .setTime(a.getTime())
+                            .setStatus(a.getStatus())
+                            .build())
+                    .collect(Collectors.toList());
+            return MyAppointmentsResponse.newBuilder().addAllAppointments(appointments).build();
+        });
+    }
+
+    // ===================== HELPERS =====================
+
+    private DoctorInfo mapDoctor(DoctorMessage d) {
+        return DoctorInfo.newBuilder()
+                .setDoctorId(d.getDoctorId())
+                .setName(d.getName())
+                .setType(d.getType())
+                .setSpecialization(d.getSpecialization())
+                .setIsActive(d.getIsActive())
+                .build();
+    }
+}

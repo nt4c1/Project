@@ -1,0 +1,11 @@
+// include build-logic as a composite build Must be at the top
+pluginManagement {
+    includeBuild("build-logic")
+}
+
+rootProject.name = "Modular"
+
+include("DoctorModule")
+include("PatientModule")
+include 'Infrastructure'
+include 'Common'
