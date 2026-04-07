@@ -1,7 +1,0 @@
-package com.health.doctor.application.usecase.interfaces;
-
-import com.health.doctor.domain.model.Appointment;
-
-public interface PostponeAppointmentUseCaseInterface {
-    void execute(Appointment appointment);
-}

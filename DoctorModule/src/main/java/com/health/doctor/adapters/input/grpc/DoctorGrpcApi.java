@@ -1,5 +1,6 @@
 package com.health.doctor.adapters.input.grpc;
 
+import com.health.doctor.application.service.LocationService;
 import com.health.doctor.application.usecase.implementtion.*;
 import com.health.doctor.application.usecase.interfaces.*;
 import com.health.doctor.domain.exception.DomainException;
@@ -27,52 +28,23 @@ import java.util.stream.Collectors;
 @Singleton
 public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBase {
 
-    private final GetDoctorsByLocationUseCaseInterface locationUseCase;
-    private final GetScheduleUseCaseInterface scheduleUseCase;
-    private final GetAppointmentsUseCaseInterface appointmentsUseCase;
-    private final GetPendingAppointmentsUseCaseInterface pendingUseCase;
-    private final AcceptAppointmentUseCaseInterface acceptUseCase;
-    private final PostponeAppointmentUseCaseInterface postponeUseCase;
-    private final UpdateDoctorLocationUseCaseInterface updateLocationUseCase;
-    private final CreateAppointmentUseCaseInterface createAppointmentUseCase;
-    private final CreateDoctorUseCaseInterface createDoctorUseCase;
-    private final CreateClinicUseCaseInterface createClinicUseCase;
-    private final CreateScheduleUseCaseInterface createScheduleUseCase;
-    private final GetDoctorsByClinicUseCaseInterface clinicUseCase;
-    private final CancelAppointmnetInterface cancelAppointment;
-    private final DoctorLoginUseCaseInterface doctorLoginUseCase;
-    private final ValidateDoctorTokenUseCaseInterface validateDoctorTokenUseCase;
+
+    private final AppointmentInterface appointmentsUseCase;
+    private final ClinicInterface clinicUseCase;
+    private final DoctorInterface doctorUseCase;
+    private final ScheduleInterface scheduleUseCase;
     private final DoctorRepositoryPort doctorRepo;
     private final AppointmentRepositoryPort appointmentRepo;
 
-    public DoctorGrpcApi(GetDoctorsByLocationUseCase locationUseCase,
-                         GetScheduleUseCase scheduleUseCase,
-                         GetAppointmentsUseCase appointmentsUseCase,
-                         GetPendingAppointmentsUseCase pendingUseCase,
-                         AcceptAppointmentUseCase acceptUseCase,
-                         PostponeAppointmentUseCase postponeUseCase,
-                         UpdateDoctorLocationUseCase updateLocationUseCase,
-                         CreateAppointmentUseCase createAppointmentUseCase, CreateDoctorUseCaseInterface createDoctorUseCase, CreateClinicUseCaseInterface createClinicUseCase, CreateScheduleUseCaseInterface createScheduleUseCase, GetDoctorsByClinicUseCaseInterface clinicUseCase, CancelAppointmnetInterface cancelAppointment, DoctorLoginUseCaseInterface doctorLoginUseCase, ValidateDoctorTokenUseCaseInterface validateDoctorTokenUseCase,
-                         DoctorRepositoryPort doctorRepo,
-                         AppointmentRepositoryPort appointmentRepo) {
-        this.locationUseCase = locationUseCase;
-        this.scheduleUseCase = scheduleUseCase;
+    public DoctorGrpcApi(AppointmentInterface appointmentsUseCase, ClinicInterface clinicUseCase, DoctorInterface doctorUseCase, ScheduleInterface scheduleUseCase, DoctorRepositoryPort doctorRepo, AppointmentRepositoryPort appointmentRepo) {
         this.appointmentsUseCase = appointmentsUseCase;
-        this.pendingUseCase = pendingUseCase;
-        this.acceptUseCase = acceptUseCase;
-        this.postponeUseCase = postponeUseCase;
-        this.updateLocationUseCase = updateLocationUseCase;
-        this.createAppointmentUseCase = createAppointmentUseCase;
-        this.createDoctorUseCase = createDoctorUseCase;
-        this.createClinicUseCase = createClinicUseCase;
-        this.createScheduleUseCase = createScheduleUseCase;
         this.clinicUseCase = clinicUseCase;
-        this.cancelAppointment = cancelAppointment;
-        this.doctorLoginUseCase = doctorLoginUseCase;
-        this.validateDoctorTokenUseCase = validateDoctorTokenUseCase;
+        this.doctorUseCase = doctorUseCase;
+        this.scheduleUseCase = scheduleUseCase;
         this.doctorRepo = doctorRepo;
         this.appointmentRepo = appointmentRepo;
     }
+
 
     @Override
     public void createDoctor(CreateDoctorRequest request,
@@ -93,7 +65,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             }
 
             DoctorType type = DoctorType.valueOf(request.getType().toUpperCase());
-            UUID id = createDoctorUseCase.execute(
+            UUID id = doctorUseCase.createDoctor(
                     request.getName(),
                     clinicId,
                     type,
@@ -114,7 +86,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void createClinic(CreateClinicRequest request,
                              StreamObserver<CreateClinicResponse> observer){
         handle(observer, ()-> {
-            UUID id = createClinicUseCase.execute(
+            UUID id = clinicUseCase.createClinic(
                     request.getName(), request.getLocationText()
             );
             observer.onNext(CreateClinicResponse.newBuilder()
@@ -130,7 +102,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void createSchedule(CreateScheduleRequest request,
                                StreamObserver<CreateScheduleResponse> observer){
         handle(observer, () -> {
-            createScheduleUseCase.execute(
+            scheduleUseCase.createSchedule(
                     UUID.fromString(request.getDoctorId()),
                     new HashSet<>(request.getWorkingDaysList()),
                     Instant.parse(request.getStartTime()),
@@ -151,7 +123,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getNearbyDoctors(NearbyDoctorsRequest request,
                                  StreamObserver<NearbyDoctorsResponse> responseObserver) {
         handle(responseObserver, () -> {
-            List<Doctor> doctors = locationUseCase.executeNear(request.getLocationText());
+            List<Doctor> doctors = doctorUseCase.getDoctorsByLocationText(request.getLocationText());
             responseObserver.onNext(NearbyDoctorsResponse.newBuilder()
                     .addAllDoctors(doctors.stream().map(this::toMsg).collect(Collectors.toList()))
                     .build()
@@ -164,7 +136,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getDoctorsByLocation(ByLocationRequest request,
                                      StreamObserver<ByLocationResponse> responseObserver) {
         handle(responseObserver, () -> {
-            List<Doctor> doctors = locationUseCase.execute(request.getGeohashPrefix());
+            List<Doctor> doctors = doctorUseCase.getDoctorsByLocationGeohash(request.getGeohashPrefix());
             responseObserver.onNext(ByLocationResponse.newBuilder()
                     .addAllDoctors(doctors.stream().map(this::toMsg).collect(Collectors.toList()))
                     .build()
@@ -177,7 +149,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getDoctorsByClinic(GetByClinicRequest request,
                                    StreamObserver<GetByClinicResponse> observer) {
         handle(observer, () -> {
-            List<Doctor> doctors = clinicUseCase.execute(
+            List<Doctor> doctors = doctorUseCase.getDoctorsByClinic(
                     UUID.fromString(request.getClinicId()));
             observer.onNext(GetByClinicResponse.newBuilder()
                     .addAllDoctors(doctors.stream().map(this::toMsg).collect(Collectors.toList()))
@@ -191,7 +163,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getDoctorSchedule(GetScheduleRequest request,
                                   StreamObserver<GetScheduleResponse> observer) {
         handle(observer, () -> {
-            DoctorSchedule s = scheduleUseCase.execute(
+            DoctorSchedule s = scheduleUseCase.getSchedule(
                             UUID.fromString(request.getDoctorId()))
                     .orElseThrow(() -> new com.health.doctor.domain.exception
                             .NotFoundException("No schedule for doctor: "
@@ -215,7 +187,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getAppointments(GetAppointmentsRequest request,
                                 StreamObserver<GetAppointmentsResponse> observer) {
         handle(observer, () -> {
-            List<Appointment> list = appointmentsUseCase.execute(
+            List<Appointment> list = appointmentsUseCase.getAppointment(
                     UUID.fromString(request.getDoctorId()),
                     LocalDate.parse(request.getDate())
             );
@@ -231,7 +203,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void updateLocation(UpdateLocationRequest request,
                                StreamObserver<UpdateLocationResponse> responseObserver) {
        handle(responseObserver, () -> {
-           updateLocationUseCase.execute(
+           doctorUseCase.UpdateDoctorLocation(
                    UUID.fromString(request.getDoctorId()),
                    request.getLocationText()
            );
@@ -258,7 +230,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void createAppointment(CreateAppointmentRequest request,
                                   StreamObserver<CreateAppointmentResponse> observer) {
         handle(observer, () -> {
-            UUID id = createAppointmentUseCase.execute(
+            UUID id = appointmentsUseCase.createAppointment(
                     UUID.fromString(request.getDoctorId()),
                     UUID.fromString(request.getPatientId()),
                     LocalDate.parse(request.getDate()),
@@ -278,7 +250,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                                   StreamObserver<CancelAppointmentResponse> observer) {
         handle(observer, () -> {
 
-            cancelAppointment.execute(
+            appointmentsUseCase.cancelAppointment(
                     UUID.fromString(request.getAppointmentId()),
                     UUID.fromString(request.getPatientId()),
                     UUID.fromString(request.getDoctorId()),
@@ -296,7 +268,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getPendingAppointments(GetAppointmentsRequest request,
                                        StreamObserver<GetAppointmentsResponse> observer) {
         handle(observer, () -> {
-            List<Appointment> list = pendingUseCase.execute(
+            List<Appointment> list = appointmentsUseCase.pendingAppointment(
                     UUID.fromString(request.getDoctorId()),
                     LocalDate.parse(request.getDate())
             );
@@ -312,7 +284,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void acceptAppointment(AppointmentActionRequest request,
                                   StreamObserver<AppointmentActionResponse> observer) {
         handle(observer, () -> {
-            acceptUseCase.execute(toAppointment(request));
+            appointmentsUseCase.acceptAppointment(toAppointment(request));
             observer.onNext(AppointmentActionResponse.newBuilder()
                     .setSuccess(true).setMessage("Accepted").build());
             observer.onCompleted();
@@ -323,7 +295,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void postponeAppointment(AppointmentActionRequest request,
                                     StreamObserver<AppointmentActionResponse> observer) {
         handle(observer, () -> {
-            postponeUseCase.execute(toAppointment(request));
+            appointmentsUseCase.postponeAppointment(toAppointment(request));
             observer.onNext(AppointmentActionResponse.newBuilder()
                     .setSuccess(true).setMessage("Postponed").build());
             observer.onCompleted();
@@ -351,7 +323,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void doctorLogin(DoctorLoginRequest request,
                             StreamObserver<DoctorLoginResponse> observer) {
         handle(observer ,() -> {
-            DoctorLoginResponse response = doctorLoginUseCase.execute(
+            DoctorLoginResponse response = doctorUseCase.loginDoctor(
                     request.getEmail(),request.getPassword());
             observer.onNext(response);
             observer.onCompleted();
@@ -362,7 +334,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void validateDoctorToken(ValidateTokenRequest request,
                                     StreamObserver<ValidateTokenResponse> observer) {
         handle(observer, () -> {
-            ValidateTokenResponse response = validateDoctorTokenUseCase.execute(
+            ValidateTokenResponse response = doctorUseCase.validateDoctor(
                     request.getToken());
             observer.onNext(response);
             observer.onCompleted();

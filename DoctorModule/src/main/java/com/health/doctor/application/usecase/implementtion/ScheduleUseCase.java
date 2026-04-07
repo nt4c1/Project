@@ -1,29 +1,32 @@
 package com.health.doctor.application.usecase.implementtion;
 
-import com.health.doctor.application.usecase.interfaces.CreateScheduleUseCaseInterface;
+import com.health.doctor.application.usecase.interfaces.ScheduleInterface;
+import com.health.doctor.domain.exception.NotFoundException;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import jakarta.inject.Singleton;
 
-import java.time.*;
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Singleton
-public class CreateScheduleUseCase implements CreateScheduleUseCaseInterface {
+public class ScheduleUseCase implements ScheduleInterface {
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
 
     private final ScheduleRepositoryPort repo;
 
-    public CreateScheduleUseCase(ScheduleRepositoryPort repo) {
+    public ScheduleUseCase(ScheduleRepositoryPort repo) {
+
         this.repo = repo;
     }
 
-    Instant now = ZonedDateTime.now(NPT).toInstant();
-
-    public void execute(UUID doctorId, Set<String> workingDays, Instant startTime,
-                        Instant endTime, int slotDuration, int maxPerDay) {
+    @Override
+    public void createSchedule(UUID doctorId, Set<String> workingDays, Instant startTime, Instant endTime, int slotDuration, int maxPerDay) {
         Set<DayOfWeek> days = workingDays.stream()
                 .map(DayOfWeek::valueOf)
                 .collect(Collectors.toSet());
@@ -32,5 +35,11 @@ public class CreateScheduleUseCase implements CreateScheduleUseCaseInterface {
                 doctorId, days, startTime, endTime, slotDuration, maxPerDay
         );
         repo.save(schedule);
+    }
+
+    @Override
+    public Optional<DoctorSchedule> getSchedule(UUID doctorId) {
+        if(doctorId == null ) throw new NotFoundException("doctorId is required");
+        return Optional.ofNullable(repo.findByDoctorId(doctorId));
     }
 }

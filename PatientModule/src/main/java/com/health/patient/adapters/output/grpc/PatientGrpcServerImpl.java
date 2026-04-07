@@ -20,25 +20,14 @@ import java.util.stream.Collectors;
 @Singleton
 public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcServiceImplBase {
 
-    private final CreatePatientUseCaseInterface createPatientUseCase;
-    private final GetPatientUseCaseInterface getPatientUseCase;
-    private final RegisterPatientUseCaseInterface registerPatientUseCase;
-    private final ValidateTokenUseCaseInterface validateTokenUseCase;
+    private final PatientInterface patientUseCase;
     private final DoctorGrpcClient doctorGrpcClient;
 
-    public PatientGrpcServerImpl(
-            CreatePatientUseCaseInterface createPatientUseCase,
-            GetPatientUseCaseInterface getPatientUseCase,
-            RegisterPatientUseCaseInterface registerPatientUseCase,
-            ValidateTokenUseCaseInterface validateTokenUseCase,
-            DoctorGrpcClient doctorGrpcClient
-    ) {
-        this.createPatientUseCase = createPatientUseCase;
-        this.getPatientUseCase = getPatientUseCase;
-        this.registerPatientUseCase = registerPatientUseCase;
-        this.validateTokenUseCase = validateTokenUseCase;
+    public PatientGrpcServerImpl(PatientInterface patientUseCase, DoctorGrpcClient doctorGrpcClient) {
+        this.patientUseCase = patientUseCase;
         this.doctorGrpcClient = doctorGrpcClient;
     }
+
 
     // ===================== COMMON HELPERS =====================
 
@@ -81,7 +70,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void patientLogin(PatientLoginRequest request,
                              StreamObserver<PatientLoginResponse> observer) {
         handle(observer, () ->
-                registerPatientUseCase.login(request.getEmail(), request.getPassword())
+                patientUseCase.loginPatient(request.getEmail(), request.getPassword())
         );
     }
 
@@ -89,7 +78,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void validatePatientToken(ValidateTokenRequest request,
                                      StreamObserver<ValidateTokenResponse> observer) {
         handle(observer, () ->
-                validateTokenUseCase.execute(request.getToken())
+                patientUseCase.validatePatient(request.getToken())
         );
     }
 
@@ -97,7 +86,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void registerPatient(RegisterPatientRequest request,
                                 StreamObserver<RegisterPatientResponse> observer) {
         handle(observer, () -> {
-            UUID id = registerPatientUseCase.execute(
+            UUID id = patientUseCase.registerPatient(
                     request.getName(), request.getEmail(), request.getPassword(), request.getPhone()
             );
             return RegisterPatientResponse.newBuilder()
@@ -113,7 +102,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void createPatient(CreatePatientRequest request,
                               StreamObserver<CreatePatientResponse> observer) {
         handle(observer, () -> {
-            UUID id = createPatientUseCase.execute(request.getName(), request.getEmail(), request.getPhone(),request.getPassword());
+            UUID id = patientUseCase.createPatient(request.getName(), request.getEmail(), request.getPhone(),request.getPassword());
             return CreatePatientResponse.newBuilder()
                     .setPatientId(id.toString())
                     .setMessage("Patient created successfully")
@@ -126,14 +115,14 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                            StreamObserver<GetPatientResponse> observer) {
         handle(observer, () -> {
             ensureSelf(request.getPatientId());
-            Patient p = getPatientUseCase.execute(UUID.fromString(request.getPatientId()))
+            Patient p = patientUseCase.getPatient(UUID.fromString(request.getPatientId()))
                     .orElseThrow(() -> new DomainException("Patient not found", Status.NOT_FOUND));
 
             return GetPatientResponse.newBuilder()
                     .setPatientId(p.getId().toString())
                     .setName(p.getName())
                     .setEmail(p.getEmail())
-                    .setPhone("") // TODO: Add phone to Patient domain model if needed
+                    .setPhone(p.getPhone())
                     .build();
         });
     }
@@ -142,8 +131,8 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void patientExists(PatientExistsRequest request,
                               StreamObserver<PatientExistsResponse> observer) {
         handle(observer, () -> {
-            boolean exists = getPatientUseCase
-                    .execute(UUID.fromString(request.getPatientId()))
+            boolean exists = patientUseCase
+                    .getPatient(UUID.fromString(request.getPatientId()))
                     .isPresent();
             return PatientExistsResponse.newBuilder()
                     .setExists(exists)
