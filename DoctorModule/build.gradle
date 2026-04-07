@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation project(":Common") // proto+dto
+    implementation 'com.health:Common:0.1' // proto+dto
     implementation 'io.micronaut:micronaut-http-client'  // for Photon
     implementation 'ch.hsr:geohash:1.4.0'
     annotationProcessor 'io.micronaut:micronaut-inject-java'

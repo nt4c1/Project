@@ -1,10 +1,9 @@
 plugins {
     id 'service-conventions'
-    id 'common-conventions'
 }
 
 dependencies {
-    implementation project(':Common')
+    implementation 'com.health:Common:0.1'
     implementation project(':Infrastructure')
     implementation 'ch.hsr:geohash:1.4.0'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
