@@ -64,7 +64,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                 }
             }
 
-            DoctorType type = DoctorType.valueOf(request.getType().toUpperCase());
+            DoctorType type = DoctorType.valueOf(request.getType().name());
             UUID id = doctorUseCase.createDoctor(
                     request.getName(),
                     clinicId,
@@ -234,7 +234,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     UUID.fromString(request.getDoctorId()),
                     UUID.fromString(request.getPatientId()),
                     LocalDate.parse(request.getDate()),
-                    LocalTime.from(Instant.parse(request.getTime()))
+                    LocalTime.parse(request.getTime())
             );
             observer.onNext(CreateAppointmentResponse.newBuilder()
                     .setSuccess(true)
@@ -345,7 +345,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         return DoctorMessage.newBuilder()
                 .setDoctorId(d.getId() != null ? d.getId().toString() : "")
                 .setName(d.getName() != null ? d.getName() : "")
-                .setType(d.getType() != null ? d.getType().name() : "")
+                .setType(DoctorMessage.Type.valueOf(d.getType().name()))
                 .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
                 .setIsActive(d.isActive())
                 .build();
@@ -358,7 +358,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                 .setPatientId(a.getPatientId().toString())
                 .setDate(a.getAppointmentDate().toString())
                 .setTime(a.getScheduleTime().toString())
-                .setStatus(a.getStatus().name())
+                .setStatus(AppointmentMessage.Status.valueOf(a.getStatus().name()))
                 .build();
     }
 
@@ -369,7 +369,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                 UUID.fromString(r.getPatientId()),
                 LocalDate.parse(r.getDate()),
                 LocalTime.parse(r.getTime()),
-                AppointmentStatus.valueOf(r.getCurrentStatus()),
+                AppointmentStatus.valueOf(r.getStatus().name()),
                 null, null
         );
     }

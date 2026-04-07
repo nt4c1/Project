@@ -205,7 +205,11 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         handle(observer, () -> {
             ensureSelf(request.getPatientId());
             com.health.grpc.doctor.CancelAppointmentResponse res = doctorGrpcClient.cancelAppointment(
-                    request.getAppointmentId(), request.getPatientId(), "", "", ""
+                    request.getAppointmentId(),
+                    request.getPatientId(),
+                    request.getDoctorId(),
+                    request.getDate(),
+                    request.getTime()
             );
             return CancelAppointmentResponse.newBuilder()
                     .setSuccess(res.getSuccess())
@@ -227,7 +231,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                             .setPatientId(a.getPatientId())
                             .setDate(a.getDate())
                             .setTime(a.getTime())
-                            .setStatus(a.getStatus())
+                            .setStatus(AppointmentInfo.Status.valueOf(a.getStatus().name()))
                             .build())
                     .collect(Collectors.toList());
             return MyAppointmentsResponse.newBuilder().addAllAppointments(appointments).build();
@@ -240,7 +244,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         return DoctorInfo.newBuilder()
                 .setDoctorId(d.getDoctorId())
                 .setName(d.getName())
-                .setType(d.getType())
+                .setType(DoctorInfo.Type.valueOf(d.getType().name()))
                 .setSpecialization(d.getSpecialization())
                 .setIsActive(d.getIsActive())
                 .build();

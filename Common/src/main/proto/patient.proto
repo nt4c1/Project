@@ -104,7 +104,12 @@ message MyAppointmentsResponse { repeated AppointmentInfo appointments = 1; }
 message DoctorInfo {
   string doctor_id      = 1;
   string name           = 2;
-  string type           = 3;
+  enum Type   {
+    TYPE_UNSPECIFIED = 0;
+    INDIVIDUAL = 1;
+    CLINIC_DOCTOR     = 2;
+  }
+  Type type = 3;
   string specialization = 4;
   bool   is_active      = 5;
 }
@@ -115,5 +120,12 @@ message AppointmentInfo {
   string patient_id     = 3;
   string date           = 4;
   string time           = 5;
-  string status         = 6;
+  enum Status  {
+    TYPE_UNSPECIFIED = 0;
+    PENDING          = 1;
+    ACCEPTED         = 2;
+    CANCELLED        = 3;
+    POSTPONED        = 4;
+  }
+  Status status = 6;
 }

@@ -57,7 +57,12 @@ message DoctorLoginResponse {
 message CreateDoctorRequest {
   string name           = 1;
   optional string clinic_id      = 2;
-  string type           = 3;
+  enum Type   {
+    TYPE_UNSPECIFIED = 0;
+    INDIVIDUAL = 1;
+    CLINIC_DOCTOR     = 2;
+  }
+  Type type = 3;
   string specialization = 4;
   string email          = 5;
   string password       = 6;
@@ -68,7 +73,12 @@ message GetDoctorRequest  { string doctor_id = 1; }
 message GetDoctorResponse {
   string doctor_id      = 1;
   string name           = 2;
-  string type           = 3;
+  enum Type   {
+    TYPE_UNSPECIFIED = 0;
+    INDIVIDUAL = 1;
+    CLINIC_DOCTOR     = 2;
+  }
+  Type type = 3;
   string specialization = 4;
   string clinic_id      = 5;
   bool   is_active      = 6;
@@ -153,7 +163,14 @@ message AppointmentActionRequest {
   string patient_id     = 3;
   string date           = 4;
   string time           = 5;
-  string current_status = 6;
+  enum Status  {
+    TYPE_UNSPECIFIED = 0;
+    PENDING          = 1;
+    ACCEPTED         = 2;
+    CANCELLED        = 3;
+    POSTPONED        = 4;
+  }
+Status status = 6;
 }
 message AppointmentActionResponse { bool success = 1; string message = 2; }
 
@@ -162,7 +179,12 @@ message AppointmentActionResponse { bool success = 1; string message = 2; }
 message DoctorMessage {
   string doctor_id      = 1;
   string name           = 2;
-  string type           = 3;
+  enum Type   {
+    TYPE_UNSPECIFIED = 0;
+    INDIVIDUAL = 1;
+    CLINIC_DOCTOR     = 2;
+  }
+  Type type = 3;
   string specialization = 4;
   bool   is_active      = 5;
 }
@@ -173,5 +195,12 @@ message AppointmentMessage {
   string patient_id     = 3;
   string date           = 4;
   string time           = 5;
-  string status         = 6;
+  enum Status  {
+    TYPE_UNSPECIFIED = 0;
+    PENDING          = 1;
+    ACCEPTED         = 2;
+    CANCELLED        = 3;
+    POSTPONED        = 4;
+  }
+  Status status = 6;
 }
