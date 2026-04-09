@@ -19,101 +19,123 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         this.session = session;
     }
 
+    // ── Save ──────────────────────────────────────────────────────────────────
+
     @Override
     public void save(Appointment a) {
-
-        // Initialize row to 0 if not exists
-        session.execute(
-                "INSERT INTO doctor_service.appointment_count_by_doctor_date " +
-                        "(doctor_id, appointment_date, count) VALUES (?,?,0) IF NOT EXISTS",
-                a.getDoctorId(), a.getAppointmentDate()
-        );
-
-        // Read current count
+        //Count
         Row countRow = session.execute(
                 "SELECT count FROM doctor_service.appointment_count_by_doctor_date " +
                         "WHERE doctor_id=? AND appointment_date=?",
                 a.getDoctorId(), a.getAppointmentDate()
         ).one();
 
-        int current = countRow != null ? countRow.getInt("count") : 0;
+        long current = countRow != null ? countRow.getLong("count") : 0L;
 
+        //Limit
         if (current >= 50) {
             throw new RuntimeException("Doctor fully booked for the day");
         }
 
-        // LWT optimistic lock
-        ResultSet rs = session.execute(
-                "UPDATE doctor_service.appointment_count_by_doctor_date " +
-                        "SET count = ? " +
-                        "WHERE doctor_id=? AND appointment_date=? IF count = ?",
-                current + 1, a.getDoctorId(), a.getAppointmentDate(), current
-        );
 
-        if (!rs.wasApplied()) {
-            throw new RuntimeException("Concurrent booking conflict, please retry");
-        }
+        Instant now = Instant.now();
+        BatchStatement batch = BatchStatement.newInstance(DefaultBatchType.LOGGED)
+                // appointments_by_id — source of truth for direct lookups
+                .add(SimpleStatement.newInstance(
+                        "INSERT INTO doctor_service.appointments_by_id " +
+                                "(appointment_id, doctor_id, patient_id, appointment_date, " +
+                                " scheduled_time, status, reason_for_visit, " +
+                                " cancellation_reason, created_at, updated_at) " +
+                                "VALUES (?,?,?,?,?,?,?,?,?,?) IF NOT EXISTS",
+                        a.getId(), a.getDoctorId(), a.getPatientId(),
+                        a.getAppointmentDate(), a.getScheduleTime(),
+                        a.getStatus().name(), a.getReasonForVisit(),
+                        null, now, now))
+                // appointments_by_doctor — doctor daily schedule view
+                .add(SimpleStatement.newInstance(
+                        "INSERT INTO doctor_service.appointments_by_doctor " +
+                                "(doctor_id, appointment_date, scheduled_time, appointment_id, " +
+                                " patient_id, patient_name, patient_phone, status, " +
+                                " reason_for_visit, created_at, updated_at) " +
+                                "VALUES (?,?,?,?,?,?,?,?,?,?,?) IF NOT EXISTS",
+                        a.getDoctorId(), a.getAppointmentDate(), a.getScheduleTime(),
+                        a.getId(), a.getPatientId(),
+                        a.getPatientName(), a.getPatientPhone(),
+                        a.getStatus().name(), a.getReasonForVisit(),
+                        now, now))
+                // appointments_by_doctor_status — status-filtered view
+                .add(SimpleStatement.newInstance(
+                        "INSERT INTO doctor_service.appointments_by_doctor_status " +
+                                "(doctor_id, status, appointment_date, scheduled_time, " +
+                                " appointment_id, patient_id, patient_name) " +
+                                "VALUES (?,?,?,?,?,?,?) IF NOT EXISTS",
+                        a.getDoctorId(), a.getStatus().name(),
+                        a.getAppointmentDate(), a.getScheduleTime(),
+                        a.getId(), a.getPatientId(), a.getPatientName()))
+                // appointments_by_patient — patient history view (doctor/clinic info denormalized)
+                .add(SimpleStatement.newInstance(
+                        "INSERT INTO doctor_service.appointments_by_patient " +
+                                "(patient_id, appointment_date, scheduled_time, appointment_id, " +
+                                " doctor_id, doctor_name, clinic_name, specialization, " +
+                                " status, reason_for_visit) " +
+                                "VALUES (?,?,?,?,?,?,?,?,?,?) IF NOT EXISTS",
+                        a.getPatientId(), a.getAppointmentDate(), a.getScheduleTime(),
+                        a.getId(), a.getDoctorId(),
+                        a.getDoctorName(), a.getClinicName(), a.getSpecialization(),
+                        a.getStatus().name(), a.getReasonForVisit()));
 
         try {
-            // main table
-            session.execute(
-                    "INSERT INTO doctor_service.appointments_by_doctor " +
-                            "(doctor_id, appointment_date, scheduled_time, appointment_id, patient_id, status, created_at, updated_at) " +
-                            "VALUES (?,?,?,?,?,?,?,?)",
-                    a.getDoctorId(), a.getAppointmentDate(), a.getScheduleTime(),
-                    a.getId(), a.getPatientId(), a.getStatus().name(),
-                    a.getCreatedAt(), a.getUpdateAt()
-            );
-
-            // status table
-            session.execute(
-                    "INSERT INTO doctor_service.appointments_by_doctor_status " +
-                            "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id) " +
-                            "VALUES (?,?,?,?,?,?)",
-                    a.getDoctorId(), a.getStatus().name(), a.getAppointmentDate(),
-                    a.getScheduleTime(), a.getId(), a.getPatientId()
-            );
-
-            // patient view table
-            session.execute(
-                    "INSERT INTO doctor_service.appointments_by_patient " +
-                            "(patient_id, appointment_date, scheduled_time, appointment_id, doctor_id, status) " +
-                            "VALUES (?,?,?,?,?,?)",
-                    a.getPatientId(), a.getAppointmentDate(), a.getScheduleTime(),
-                    a.getId(), a.getDoctorId(), a.getStatus().name()
-            );
-
+            session.execute(batch);
         } catch (Exception e) {
-            decrementCount(a.getDoctorId(), a.getAppointmentDate());
+            // Batch failed — no counter was incremented yet, nothing to roll back
             throw e;
         }
+
+        // ── 3. Counter update
+        try {
+            session.execute(
+                    "UPDATE doctor_service.appointment_count_by_doctor_date " +
+                            "SET count = count + 1 " +
+                            "WHERE doctor_id=? AND appointment_date=?",
+                    a.getDoctorId(), a.getAppointmentDate()
+            );
+        } catch (Exception e) {
+            // Non-fatal: log and continue — counter is advisory, not authoritative
+        }
     }
+
+    // ── Reads ─────────────────────────────────────────────────────────────────
 
     @Override
     public List<Appointment> findByDoctorAndDate(UUID doctorId, LocalDate date) {
         ResultSet rs = session.execute(
-                "SELECT * FROM doctor_service.appointments_by_doctor WHERE doctor_id=? AND appointment_date=?",
+                "SELECT * FROM doctor_service.appointments_by_doctor " +
+                        "WHERE doctor_id=? AND appointment_date=?",
                 doctorId, date
         );
         List<Appointment> list = new ArrayList<>();
-        for (Row r : rs) list.add(mapRow(r));
+        for (Row r : rs) list.add(mapDoctorRow(r));
         return list;
     }
 
     @Override
     public List<Appointment> findDoctorAndStatus(UUID doctorId, String status, LocalDate date) {
         ResultSet rs = session.execute(
-                "SELECT * FROM doctor_service.appointments_by_doctor_status WHERE doctor_id=? AND status=? AND appointment_date=?",
+                "SELECT * FROM doctor_service.appointments_by_doctor_status " +
+                        "WHERE doctor_id=? AND status=? AND appointment_date=?",
                 doctorId, status, date
         );
         List<Appointment> list = new ArrayList<>();
         for (Row r : rs) {
-            list.add(new Appointment(
+            Appointment a = new Appointment(
                     r.getUuid("appointment_id"), r.getUuid("doctor_id"),
                     r.getUuid("patient_id"), r.getLocalDate("appointment_date"),
-                    r.getLocalTime("scheduled_time"), AppointmentStatus.valueOf(status),
+                    r.getLocalTime("scheduled_time"),
+                    AppointmentStatus.valueOf(status),
                     null, null
-            ));
+            );
+            a.setPatientName(r.getString("patient_name"));
+            list.add(a);
         }
         return list;
     }
@@ -126,108 +148,184 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     @Override
     public List<Appointment> findByPatientAndDate(UUID patientId, LocalDate date) {
         ResultSet rs = session.execute(
-                "SELECT * FROM doctor_service.appointments_by_patient WHERE patient_id=? AND appointment_date=?",
+                "SELECT * FROM doctor_service.appointments_by_patient " +
+                        "WHERE patient_id=? AND appointment_date=?",
                 patientId, date
         );
         List<Appointment> list = new ArrayList<>();
         for (Row r : rs) {
-            list.add(new Appointment(
+            Appointment a = new Appointment(
                     r.getUuid("appointment_id"), r.getUuid("doctor_id"),
                     r.getUuid("patient_id"), r.getLocalDate("appointment_date"),
                     r.getLocalTime("scheduled_time"),
                     AppointmentStatus.valueOf(r.getString("status")),
                     null, null
-            ));
+            );
+            // Denormalized fields — no extra lookups needed
+            a.setDoctorName(r.getString("doctor_name"));
+            a.setClinicName(r.getString("clinic_name"));
+            a.setSpecialization(r.getString("specialization"));
+            a.setReasonForVisit(r.getString("reason_for_visit"));
+            list.add(a);
         }
         return list;
     }
 
     @Override
+    public Optional<Appointment> findById(UUID id) {
+        Row r = session.execute(
+                "SELECT * FROM doctor_service.appointments_by_id WHERE appointment_id=?",
+                id
+        ).one();
+        return Optional.ofNullable(r).map(this::mapIdRow);
+    }
+
+    // ── Status update ─────────────────────────────────────────────────────────
+
+    @Override
     public void updateStatus(Appointment a, String newStatus) {
-        // Delete old row
+        Instant now = Instant.now();
+
+        // appointments_by_id always update first as it is truth
         session.execute(
-                "DELETE FROM doctor_service.appointments_by_doctor " +
-                        "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
-                a.getDoctorId(), a.getAppointmentDate().minusDays(1),
+                "UPDATE doctor_service.appointments_by_id " +
+                        "SET status=?, updated_at=? " +
+                        "WHERE appointment_id=?",
+                newStatus, now, a.getId()
+        );
+
+        // appointments_by_doctor — in-place update, status is a regular column
+        session.execute(
+                "UPDATE doctor_service.appointments_by_doctor " +
+                        "SET status=?, updated_at=? " +
+                        "WHERE doctor_id=? AND appointment_date=? " +
+                        "  AND scheduled_time=? AND appointment_id=?",
+                newStatus, now,
+                a.getDoctorId(), a.getAppointmentDate(),
                 a.getScheduleTime(), a.getId()
         );
 
-        // Insert new row with new date
-        session.execute(
-                "INSERT INTO doctor_service.appointments_by_doctor " +
-                        "(doctor_id, appointment_date, scheduled_time, appointment_id, patient_id, status, created_at, updated_at) " +
-                        "VALUES (?,?,?,?,?,?,?,?)",
-                a.getDoctorId(), a.getAppointmentDate(), a.getScheduleTime(),
-                a.getId(), a.getPatientId(), newStatus, a.getCreatedAt(),
-                ZonedDateTime.now(ZoneId.of("Asia/Kathmandu")).toInstant()
-        );
-
-        // Delete old status row
+        // appointments_by_doctor_status — status is part of partition key:
+        // must DELETE old row and INSERT new one
         session.execute(
                 "DELETE FROM doctor_service.appointments_by_doctor_status " +
-                        "WHERE doctor_id=? AND status=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
+                        "WHERE doctor_id=? AND status=? AND appointment_date=? " +
+                        "  AND scheduled_time=? AND appointment_id=?",
                 a.getDoctorId(), a.getStatus().name(),
-                a.getAppointmentDate().minusDays(1), a.getScheduleTime(), a.getId()
+                a.getAppointmentDate(), a.getScheduleTime(), a.getId()
+        );
+        session.execute(
+                "INSERT INTO doctor_service.appointments_by_doctor_status " +
+                        "(doctor_id, status, appointment_date, scheduled_time, " +
+                        " appointment_id, patient_id, patient_name) " +
+                        "VALUES (?,?,?,?,?,?,?)",
+                a.getDoctorId(), newStatus,
+                a.getAppointmentDate(), a.getScheduleTime(),
+                a.getId(), a.getPatientId(), a.getPatientName()
         );
 
-        // Insert new status row
+        // appointments_by_patient — in-place update
+        session.execute(
+                "UPDATE doctor_service.appointments_by_patient " +
+                        "SET status=? " +
+                        "WHERE patient_id=? AND appointment_date=? " +
+                        "  AND scheduled_time=? AND appointment_id=?",
+                newStatus,
+                a.getPatientId(), a.getAppointmentDate(),
+                a.getScheduleTime(), a.getId()
+        );
+    }
+
+    // ── Cancel ────────────────────────────────────────────────────────────────
+
+    @Override
+    public void cancel(UUID appointmentId, UUID patientId, UUID doctorId,
+                       LocalDate date, LocalTime time, String cancellationReason) {
+        Instant now = Instant.now();
+
+        // appointments_by_id — store the cancellation reason
+        session.execute(
+                "UPDATE doctor_service.appointments_by_id " +
+                        "SET status='CANCELLED', cancellation_reason=?, updated_at=? " +
+                        "WHERE appointment_id=?",
+                cancellationReason, now, appointmentId
+        );
+
+        // appointments_by_doctor
+        session.execute(
+                "UPDATE doctor_service.appointments_by_doctor " +
+                        "SET status='CANCELLED', updated_at=? " +
+                        "WHERE doctor_id=? AND appointment_date=? " +
+                        "  AND scheduled_time=? AND appointment_id=?",
+                now, doctorId, date, time, appointmentId
+        );
+
+        // appointments_by_patient
+        session.execute(
+                "UPDATE doctor_service.appointments_by_patient " +
+                        "SET status='CANCELLED' " +
+                        "WHERE patient_id=? AND appointment_date=? " +
+                        "  AND scheduled_time=? AND appointment_id=?",
+                patientId, date, time, appointmentId
+        );
+
+        // appointments_by_doctor_status — remove from PENDING, insert as CANCELLED
+        session.execute(
+                "DELETE FROM doctor_service.appointments_by_doctor_status " +
+                        "WHERE doctor_id=? AND status='PENDING' AND appointment_date=? " +
+                        "  AND scheduled_time=? AND appointment_id=?",
+                doctorId, date, time, appointmentId
+        );
         session.execute(
                 "INSERT INTO doctor_service.appointments_by_doctor_status " +
                         "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id) " +
                         "VALUES (?,?,?,?,?,?)",
-                a.getDoctorId(), newStatus, a.getAppointmentDate(),
-                a.getScheduleTime(), a.getId(), a.getPatientId()
+                doctorId, "CANCELLED", date, time, appointmentId, patientId
         );
 
-        // Update patient view
-        session.execute(
-                "UPDATE doctor_service.appointments_by_patient SET status=? " +
-                        "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
-                newStatus, a.getPatientId(), a.getAppointmentDate(),
-                a.getScheduleTime(), a.getId()
-        );
+        decrementCount(doctorId, date);
     }
 
-    @Override
-    public void cancel(UUID appointmentId, UUID patientId, UUID doctorId, LocalDate date, Instant time) {
-        // Update patient view
-        session.execute(
-                "UPDATE doctor_service.appointments_by_patient SET status='CANCELLED' " +
-                        "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
-                patientId, date, time, appointmentId
-        );
-
-        // Update main table
-        session.execute(
-                "UPDATE doctor_service.appointments_by_doctor SET status='CANCELLED' " +
-                        "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
-                doctorId, date, time, appointmentId
-        );
-    }
+    // ── Counter ───────────────────────────────────────────────────────────────
 
     @Override
     public void decrementCount(UUID doctorId, LocalDate date) {
-        Row countRow = session.execute(
-                "SELECT count FROM doctor_service.appointment_count_by_doctor_date " +
-                        "WHERE doctor_id=? AND appointment_date=?",
-                doctorId, date
-        ).one();
-        int current = countRow != null ? countRow.getInt("count") : 0;
-        if (current <= 0) return;
         session.execute(
                 "UPDATE doctor_service.appointment_count_by_doctor_date " +
-                        "SET count = ? WHERE doctor_id=? AND appointment_date=? IF count = ?",
-                current - 1, doctorId, date, current
+                        "SET count = count - 1 " +
+                        "WHERE doctor_id=? AND appointment_date=?",
+                doctorId, date
         );
     }
 
-    private Appointment mapRow(Row r) {
-        return new Appointment(
+    // ── Row mappers ───────────────────────────────────────────────────────────
+
+    /** Maps a row from appointments_by_doctor (includes denormalized patient fields). */
+    private Appointment mapDoctorRow(Row r) {
+        Appointment a = new Appointment(
                 r.getUuid("appointment_id"), r.getUuid("doctor_id"),
                 r.getUuid("patient_id"), r.getLocalDate("appointment_date"),
                 r.getLocalTime("scheduled_time"),
                 AppointmentStatus.valueOf(r.getString("status")),
                 r.getInstant("created_at"), r.getInstant("updated_at")
         );
+        a.setPatientName(r.getString("patient_name"));
+        a.setPatientPhone(r.getString("patient_phone"));
+        a.setReasonForVisit(r.getString("reason_for_visit"));
+        return a;
+    }
+
+    /** Maps a row from appointments_by_id (full data including cancellation_reason). */
+    private Appointment mapIdRow(Row r) {
+        Appointment a = new Appointment(
+                r.getUuid("appointment_id"), r.getUuid("doctor_id"),
+                r.getUuid("patient_id"), r.getLocalDate("appointment_date"),
+                r.getLocalTime("scheduled_time"),
+                AppointmentStatus.valueOf(r.getString("status")),
+                r.getInstant("created_at"), r.getInstant("updated_at")
+        );
+        a.setReasonForVisit(r.getString("reason_for_visit"));
+        a.setCancellationReason(r.getString("cancellation_reason"));
+        return a;
     }
 }

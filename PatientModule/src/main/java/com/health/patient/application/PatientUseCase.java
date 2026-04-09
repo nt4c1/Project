@@ -17,29 +17,27 @@ import java.util.UUID;
 
 @Slf4j
 @Singleton
-public class PatientUseCase implements PatientInterface{
+public class PatientUseCase implements PatientInterface {
 
     private final PatientRepositoryPort repo;
-    private final JwtProvider jwtProvider;
+    private final JwtProvider           jwtProvider;
 
     public PatientUseCase(PatientRepositoryPort repo, JwtProvider jwtProvider) {
-        this.repo = repo;
+        this.repo        = repo;
         this.jwtProvider = jwtProvider;
     }
 
     @Override
     public UUID createPatient(String name, String email, String phone, String password) {
-        UUID id = UUID.randomUUID();
-        String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-
-        repo.save(new Patient
-                (id, name,email,phone,passwordHash));
+        UUID   id   = UUID.randomUUID();
+        String hash = BCrypt.hashpw(password, BCrypt.gensalt());
+        repo.save(new Patient(id, name, email, phone, hash));
         return id;
     }
 
     @Override
     public Optional<Patient> getPatient(UUID id) {
-            return repo.findById(id);
+        return repo.findById(id);
     }
 
     @Override
@@ -49,14 +47,13 @@ public class PatientUseCase implements PatientInterface{
         if (email == null || email.isBlank())
             throw new InvalidArgumentException("Email is required");
         if (password == null || password.length() < 6)
-            throw new InvalidArgumentException(
-                    "Password must be at least 6 characters");
+            throw new InvalidArgumentException("Password must be at least 6 characters");
 
+        // findByEmail now uses patients_by_email lookup
         if (repo.findByEmail(email).isPresent())
-            throw new AlreadyExistsException(
-                    "Patient already exists with email: " + email);
+            throw new AlreadyExistsException("Patient already exists with email: " + email);
 
-        UUID id = UUID.randomUUID();
+        UUID   id   = UUID.randomUUID();
         String hash = BCrypt.hashpw(password, BCrypt.gensalt());
         repo.save(new Patient(id, name, email, phone, hash));
         log.info("Patient registered: {}", id);
@@ -71,16 +68,13 @@ public class PatientUseCase implements PatientInterface{
             throw new InvalidArgumentException("Password is required");
 
         Patient patient = repo.findByEmail(email)
-                .orElseThrow(() -> new NotFoundException(
-                        "Patient not found: " + email));
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + email));
 
         if (!BCrypt.checkpw(password, patient.getPasswordHash()))
             throw new InvalidArgumentException("Invalid credentials");
 
-        String accessToken = jwtProvider.generateAccessToken(
-                patient.getId().toString(), "PATIENT");
-        String refreshToken = jwtProvider.generateRefreshToken(
-                patient.getId().toString());
+        String accessToken  = jwtProvider.generateAccessToken(patient.getId().toString(), "PATIENT");
+        String refreshToken = jwtProvider.generateRefreshToken(patient.getId().toString());
 
         log.info("Patient logged in: {}", patient.getId());
 
@@ -96,9 +90,9 @@ public class PatientUseCase implements PatientInterface{
     @Override
     public ValidateTokenResponse validatePatient(String token) {
         try {
-            String userId = jwtProvider.extractUserId(token);
-            String role = jwtProvider.extractRole(token);
-            boolean valid = jwtProvider.isValid(token);
+            String  userId = jwtProvider.extractUserId(token);
+            String  role   = jwtProvider.extractRole(token);
+            boolean valid  = jwtProvider.isValid(token);
             return ValidateTokenResponse.newBuilder()
                     .setValid(valid)
                     .setUserId(userId)

@@ -1,9 +1,11 @@
 package com.health.doctor.domain.ports;
 
 import com.health.doctor.domain.model.DoctorSchedule;
+
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ScheduleRepositoryPort {
     void save(DoctorSchedule schedule);
-    DoctorSchedule findByDoctorId(UUID doctorId);
+    Optional<DoctorSchedule> findByDoctorId(UUID doctorId);
 }

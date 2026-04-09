@@ -1,3 +1,4 @@
+//common module build.gradle
 plugins {
     id 'groovy-gradle-plugin'
     id 'java-library'
@@ -19,8 +20,10 @@ dependencies {
 
     // gRPC dependencies for Common
     implementation 'io.grpc:grpc-stub:1.68.0'
+    implementation 'com.google.protobuf:protobuf-java:3.25.8'  // ADDED
     implementation 'io.grpc:grpc-protobuf:1.68.0'
     implementation 'javax.annotation:javax.annotation-api:1.3.2'
+    implementation 'org.mindrot:jbcrypt:0.4'
 
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'

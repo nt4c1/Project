@@ -9,11 +9,19 @@ import java.util.List;
 import java.util.UUID;
 
 public interface DoctorInterface {
-    UUID createDoctor(String name, UUID clinicId, DoctorType type, String specialization, String email, String password);
+
+    UUID createDoctor(String name, UUID clinicId, DoctorType type,
+                      String specialization, String email, String password);
+
     DoctorLoginResponse loginDoctor(String email, String password);
+
     ValidateTokenResponse validateDoctor(String token);
+
     List<Doctor> getDoctorsByClinic(UUID clinicId);
+
     List<Doctor> getDoctorsByLocationText(String locationText);
+
     List<Doctor> getDoctorsByLocationGeohash(String geohashPrefix);
-    void UpdateDoctorLocation(UUID doctorId, String text);
+
+    void updateDoctorLocation(UUID doctorId, String locationText);
 }

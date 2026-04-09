@@ -7,4 +7,7 @@ import java.util.UUID;
 public interface ClinicRepositoryPort {
     void save(Clinic clinic);
     Clinic findById(UUID clinicId);
+    Clinic findByName(String name);
+    Clinic findByLocationText(String locationText);
+    Clinic findByLocationGeohash(String geohash);
 }

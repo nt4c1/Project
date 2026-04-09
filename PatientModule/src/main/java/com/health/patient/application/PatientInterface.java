@@ -8,9 +8,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface PatientInterface {
-    UUID createPatient(String name, String email, String Phone, String password);
+
+    UUID registerPatient(String name, String email, String password, String phone);
+
+    UUID createPatient(String name, String email, String phone, String password);
+
     Optional<Patient> getPatient(UUID id);
-    public UUID registerPatient(String name, String email, String password, String phone);
-    public PatientLoginResponse loginPatient(String email, String password);
+
+    PatientLoginResponse loginPatient(String email, String password);
+
     ValidateTokenResponse validatePatient(String token);
 }

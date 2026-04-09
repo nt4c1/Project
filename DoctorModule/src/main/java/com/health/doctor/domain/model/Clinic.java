@@ -1,12 +1,23 @@
 package com.health.doctor.domain.model;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
 import java.util.UUID;
 
+@Getter
+@Setter
 public class Clinic {
+
     private UUID id;
     private String name;
     private Location location;
     private boolean isActive;
+    private boolean isDeleted;
+    private Instant createdAt;
+    private Instant updatedAt;
 
     public Clinic(UUID id, String name, Location location, boolean isActive) {
         this.id = id;
@@ -15,35 +26,15 @@ public class Clinic {
         this.isActive = isActive;
     }
 
-    public UUID getId() {
-        return id;
+    public Clinic(UUID id, String name, Location location, boolean isActive,
+                  boolean isDeleted, Instant createdAt, Instant updatedAt) {
+        this(id, name, location, isActive);
+        this.isDeleted = isDeleted;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
-    public void setId(UUID id) {
-        this.id = id;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public Location getLocation() {
-        return location;
-    }
-
-    public void setLocation(Location location) {
-        this.location = location;
-    }
-
-    public boolean isActive() {
-        return isActive;
-    }
-
-    public void setActive(boolean active) {
-        isActive = active;
+    public String getLocationText() {
+        return location != null ? location.getLocationText() : null;
     }
 }

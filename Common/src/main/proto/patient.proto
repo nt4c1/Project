@@ -10,28 +10,27 @@ option java_multiple_files = true;
 service PatientGrpcService {
 
   // Auth
-  rpc PatientLogin         (PatientLoginRequest)   returns (PatientLoginResponse);
-  rpc ValidatePatientToken (ValidateTokenRequest)  returns (ValidateTokenResponse);  // ← from auth.proto
-  rpc RegisterPatient      (RegisterPatientRequest) returns (RegisterPatientResponse);
+  rpc PatientLogin         (PatientLoginRequest)        returns (PatientLoginResponse);
+  rpc ValidatePatientToken (ValidateTokenRequest)       returns (ValidateTokenResponse);
+  rpc RegisterPatient      (RegisterPatientRequest)     returns (RegisterPatientResponse);
 
   // Patient
-  rpc CreatePatient       (CreatePatientRequest)      returns (CreatePatientResponse);
-  rpc GetPatient           (GetPatientRequest)     returns (GetPatientResponse);
-  rpc PatientExists        (PatientExistsRequest)  returns (PatientExistsResponse);
+  rpc CreatePatient        (CreatePatientRequest)       returns (CreatePatientResponse);
+  rpc GetPatient           (GetPatientRequest)          returns (GetPatientResponse);
+  rpc PatientExists        (PatientExistsRequest)       returns (PatientExistsResponse);
 
   // Doctor discovery proxy
-  rpc GetNearbyDoctors     (NearbyDoctorsProxyRequest) returns (NearbyDoctorsProxyResponse);
-  rpc GetDoctorsByLocation (ByLocationProxyRequest)    returns (ByLocationProxyResponse);
-  rpc GetDoctorSchedule    (ScheduleProxyRequest)      returns (ScheduleProxyResponse);
+  rpc GetNearbyDoctors     (NearbyDoctorsProxyRequest)  returns (NearbyDoctorsProxyResponse);
+  rpc GetDoctorsByLocation (ByLocationProxyRequest)     returns (ByLocationProxyResponse);
+  rpc GetDoctorSchedule    (ScheduleProxyRequest)       returns (ScheduleProxyResponse);
 
   // Appointments proxy
-  rpc BookAppointment      (BookAppointmentRequest)    returns (BookAppointmentResponse);
-  rpc CancelAppointment    (CancelAppointmentRequest)  returns (CancelAppointmentResponse);
-  rpc GetMyAppointments    (MyAppointmentsRequest)     returns (MyAppointmentsResponse);
+  rpc BookAppointment      (BookAppointmentRequest)     returns (BookAppointmentResponse);
+  rpc CancelAppointment    (CancelAppointmentRequest)   returns (CancelAppointmentResponse);
+  rpc GetMyAppointments    (MyAppointmentsRequest)      returns (MyAppointmentsResponse);
 }
 
-// ── Auth ─────────────────────────────────────
-// ValidateTokenRequest and ValidateTokenResponse come from auth.proto
+// ── Auth ───────────────────────────────────────────────────
 
 message PatientLoginRequest  { string email = 1; string password = 2; }
 message PatientLoginResponse {
@@ -50,7 +49,8 @@ message RegisterPatientRequest {
 }
 message RegisterPatientResponse { string patient_id = 1; string message = 2; }
 
-// ── Patient ──────────────────────────────────
+// ── Patient ────────────────────────────────────────────────
+
 message CreatePatientRequest  { string name = 1; string email = 2; string phone = 3; string password = 4; }
 message CreatePatientResponse { string patient_id = 1; string message = 2; }
 
@@ -65,9 +65,9 @@ message GetPatientResponse {
 message PatientExistsRequest  { string patient_id = 1; }
 message PatientExistsResponse { bool exists = 1; }
 
-// ── Doctor Discovery Proxy ───────────────────
+// ── Doctor Discovery Proxy ─────────────────────────────────
 
-message NearbyDoctorsProxyRequest  { string location_text = 1; }
+message NearbyDoctorsProxyRequest  { string location_text  = 1; }
 message NearbyDoctorsProxyResponse { repeated DoctorInfo doctors = 1; }
 
 message ByLocationProxyRequest  { string geohash_prefix = 1; }
@@ -82,13 +82,14 @@ message ScheduleProxyResponse {
   int32           max_appointments_day  = 5;
 }
 
-// ── Appointments Proxy ───────────────────────
+// ── Appointments Proxy ─────────────────────────────────────
 
 message BookAppointmentRequest {
-  string doctor_id  = 1;
-  string patient_id = 2;
-  string date       = 3;
-  string time       = 4;
+  string doctor_id        = 1;
+  string patient_id       = 2;
+  string date             = 3;
+  string time             = 4;
+  string reason_for_visit = 5;  // NEW
 }
 message BookAppointmentResponse {
   bool   success        = 1;
@@ -99,33 +100,41 @@ message BookAppointmentResponse {
 message MyAppointmentsRequest  { string patient_id = 1; string date = 2; }
 message MyAppointmentsResponse { repeated AppointmentInfo appointments = 1; }
 
-// ── Shared ───────────────────────────────────
+// ── Shared ─────────────────────────────────────────────────
 
 message DoctorInfo {
   string doctor_id      = 1;
   string name           = 2;
-  enum Type   {
+  enum Type {
     TYPE_UNSPECIFIED = 0;
-    INDIVIDUAL = 1;
-    CLINIC_DOCTOR     = 2;
+    INDIVIDUAL       = 1;
+    CLINIC_DOCTOR    = 2;
   }
-  Type type = 3;
+  Type   type           = 3;
   string specialization = 4;
   bool   is_active      = 5;
 }
 
+// Enriched — doctor_name + clinic_name come from denormalized schema,
+// so the patient history view needs zero extra lookups.
 message AppointmentInfo {
-  string appointment_id = 1;
-  string doctor_id      = 2;
-  string patient_id     = 3;
-  string date           = 4;
-  string time           = 5;
-  enum Status  {
+  string appointment_id      = 1;
+  string doctor_id           = 2;
+  string patient_id          = 3;
+  string date                = 4;
+  string time                = 5;
+  enum Status {
     TYPE_UNSPECIFIED = 0;
     PENDING          = 1;
     ACCEPTED         = 2;
     CANCELLED        = 3;
     POSTPONED        = 4;
+    COMPLETED        = 5;
+    NO_SHOW          = 6;
   }
-  Status status = 6;
+  Status status              = 6;
+  string doctor_name         = 7;   // NEW: denormalized
+  string clinic_name         = 8;   // NEW: denormalized
+  string reason_for_visit    = 9;   // NEW
+  string cancellation_reason = 10;  // NEW
 }

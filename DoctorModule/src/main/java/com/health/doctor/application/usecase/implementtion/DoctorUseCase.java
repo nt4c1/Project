@@ -5,17 +5,21 @@ import com.health.doctor.domain.exception.AlreadyExistsException;
 import com.health.doctor.domain.exception.InvalidArgumentException;
 import com.health.doctor.domain.exception.NotFoundException;
 import com.health.doctor.domain.model.Doctor;
+import com.health.doctor.domain.model.DoctorCredentials;
 import com.health.doctor.domain.model.DoctorType;
 import com.health.doctor.domain.model.Location;
+import com.health.doctor.domain.ports.CredentialsRepositoryPort;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
 import com.health.doctor.infrastructure.JwtProvider;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.doctor.DoctorLoginResponse;
 import com.health.doctor.application.service.LocationService;
+import com.health.grpc.doctor.DoctorMessage;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -24,34 +28,56 @@ import java.util.UUID;
 public class DoctorUseCase implements DoctorInterface {
 
     private final DoctorRepositoryPort repo;
+    private final CredentialsRepositoryPort credentialsRepo;
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
 
-    public DoctorUseCase(DoctorRepositoryPort repo, JwtProvider jwtProvider, LocationService locationService) {
+    public DoctorUseCase(DoctorRepositoryPort repo, CredentialsRepositoryPort credentialsRepo, JwtProvider jwtProvider, LocationService locationService) {
         this.repo = repo;
+        this.credentialsRepo = credentialsRepo;
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
     }
 
 
-    @Override 
+    @Override
     public UUID createDoctor(String name, UUID clinicId, DoctorType type, String specialization, String email, String password) {
 
         if (name == null || name.isBlank())
             throw new InvalidArgumentException("Name is required");
+        if (type == null)
+            throw new InvalidArgumentException("Doctor type is required");
         if (email == null || email.isBlank())
             throw new InvalidArgumentException("Email is required");
         if (password == null || password.length() < 6)
             throw new InvalidArgumentException("Password must be at least 6 characters");
+        if (specialization == null || specialization.isBlank())
+            throw new InvalidArgumentException("Specialization is required");
 
-        if (repo.findByEmail(email).isPresent())
+        if (credentialsRepo.findByEmail(email).isPresent())
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
 
         UUID doctorId = UUID.randomUUID();
         String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
 
-        Doctor doctor = new Doctor(doctorId, name, clinicId, type,
-                specialization, true, email, passwordHash);
+        Doctor doctor = new Doctor(
+                doctorId,
+                name,
+                clinicId,
+                type,
+                specialization,
+                true
+        );
+
+        DoctorCredentials credentials = new DoctorCredentials(
+                doctorId,
+                email,
+                passwordHash,
+                Instant.now(),
+                Instant.now()
+        );
+
+        credentialsRepo.save(credentials);
         repo.save(doctor);
         return doctorId;
     }
@@ -64,23 +90,33 @@ public class DoctorUseCase implements DoctorInterface {
         if (password == null || password.isBlank())
             throw new InvalidArgumentException("Password is Required");
 
-        Doctor doctor = repo.findByEmail(email)
-                .orElseThrow(()-> new NotFoundException("Doctor not found"+email));
-        //PasswordCheck baki with Bcrypt
-        if (!BCrypt.checkpw(password, doctor.getPasswordHash()))
+        DoctorCredentials credentials = credentialsRepo.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Doctor not found: " + email));
+
+        if (!BCrypt.checkpw(password, credentials.getPasswordHash()))
             throw new InvalidArgumentException("Invalid credentials");
 
+        Doctor doctor = repo.findById(credentials.getDoctorId())
+                .orElseThrow(() -> new NotFoundException("Doctor profile not found"));
+
         String accessToken = jwtProvider.generateAccessToken(
-                doctor.getId().toString(),"Doctor");
+                doctor.getId().toString(), "Doctor");
         String refreshToken = jwtProvider.generateRefreshToken(
                 doctor.getId().toString());
-        log.info("Doctor logged in : {}{}",doctor.getId(),doctor.getName());
+        log.info("Doctor logged in: {} ({})", doctor.getName(), doctor.getId());
 
         return DoctorLoginResponse.newBuilder()
                 .setSuccess(true)
                 .setAccessToken(accessToken)
                 .setRefreshToken(refreshToken)
-                .setDoctorId(doctor.getId().toString())
+                .setDoctor(DoctorMessage.newBuilder()
+                        .setDoctorId(doctor.getId().toString())
+                        .setName(doctor.getName())
+                        .setType(com.health.grpc.doctor.DoctorType.valueOf(doctor.getType().name()))
+                        .setSpecialization(doctor.getSpecialization())
+                        .setIsActive(doctor.isActive())
+                        .setClinicId(doctor.getClinicId() != null ? doctor.getClinicId().toString() : "None")
+                )
                 .setMessage("Login Successfully")
                 .build();
     }
@@ -96,41 +132,47 @@ public class DoctorUseCase implements DoctorInterface {
                     .setValid(valid)
                     .setUserId(userid)
                     .setRole(role)
-                    .setMessage(valid ? "Token Valid " : "Token Invalid" )
+                    .setMessage(valid ? "Token Valid" : "Token Invalid")
                     .build();
         } catch (Exception e) {
-            log.warn("Token Validation Failed:{}",e.getMessage());
+            log.warn("Token Validation Failed: {}", e.getMessage());
             return ValidateTokenResponse.newBuilder()
                     .setValid(false)
-                    .setMessage("Token Invalid"+e.getMessage())
+                    .setMessage("Token Invalid: " + e.getMessage())
                     .build();
         }
     }
 
     @Override
     public List<Doctor> getDoctorsByClinic(UUID clinicId) {
+        if (clinicId == null) throw new InvalidArgumentException("Clinic ID is required");
         return repo.findByClinicId(clinicId);
     }
 
     @Override
     public List<Doctor> getDoctorsByLocationText(String locationText) {
+        if (locationText == null || locationText.isBlank()) 
+            throw new InvalidArgumentException("Location text is required");
+            
         Location location = locationService.resolve(locationText);
         String geohash = location.getGeohash().substring(0,5);
         log.info("Searching geohash: {}", geohash);
-        log.info("Neighbors will also be searched");
         return repo.findNearby(geohash);
     }
 
     @Override
     public List<Doctor> getDoctorsByLocationGeohash(String geohashPrefix) {
+        if (geohashPrefix == null || geohashPrefix.isBlank())
+            throw new InvalidArgumentException("Geohash prefix is required");
         return repo.findByGeohashPrefix(geohashPrefix);
     }
 
     @Override
-    public void UpdateDoctorLocation(UUID doctorId, String text) {
-        Location location = locationService.resolve(text);
-        repo.updateLocation(doctorId,location);
+    public void updateDoctorLocation(UUID doctorId, String locationText) {
+        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
+        if (locationText == null || locationText.isBlank()) throw new InvalidArgumentException("Location text is required");
+
+        Location location = locationService.resolve(locationText);
+        repo.updateLocation(doctorId, location);
     }
-
-
 }

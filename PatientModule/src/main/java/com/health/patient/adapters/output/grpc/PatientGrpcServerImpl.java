@@ -4,11 +4,12 @@ import com.health.grpc.auth.ValidateTokenRequest;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.doctor.*;
 import com.health.grpc.patient.*;
-import com.health.patient.application.*;
+import com.health.patient.application.PatientInterface;
 import com.health.patient.domain.exception.DomainException;
 import com.health.patient.domain.model.Patient;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
+import io.micronaut.grpc.annotation.GrpcService;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
@@ -18,53 +19,19 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Singleton
+@GrpcService
 public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcServiceImplBase {
 
-    private final PatientInterface patientUseCase;
-    private final DoctorGrpcClient doctorGrpcClient;
+    private final PatientInterface  patientUseCase;
+    private final DoctorGrpcClient  doctorGrpcClient;
 
-    public PatientGrpcServerImpl(PatientInterface patientUseCase, DoctorGrpcClient doctorGrpcClient) {
-        this.patientUseCase = patientUseCase;
+    public PatientGrpcServerImpl(PatientInterface patientUseCase,
+                                 DoctorGrpcClient doctorGrpcClient) {
+        this.patientUseCase   = patientUseCase;
         this.doctorGrpcClient = doctorGrpcClient;
     }
 
-
-    // ===================== COMMON HELPERS =====================
-
-    private <T> void handle(StreamObserver<T> observer, Supplier<T> supplier) {
-        try {
-            T response = supplier.get();
-            observer.onNext(response);
-            observer.onCompleted();
-        } catch (DomainException e) {
-            log.warn("Domain error: {}", e.getMessage());
-            observer.onError(e.getGrpcStatus()
-                    .withDescription(e.getMessage())
-                    .asRuntimeException());
-        } catch (SecurityException e) {
-            log.warn("Security error: {}", e.getMessage());
-            observer.onError(Status.PERMISSION_DENIED
-                    .withDescription(e.getMessage())
-                    .asRuntimeException());
-        } catch (Exception e) {
-            log.error("Unexpected error", e);
-            observer.onError(Status.INTERNAL
-                    .withDescription("An internal error occurred")
-                    .asRuntimeException());
-        }
-    }
-
-    /**
-     * Ensures that the authenticated user is only accessing their own data.
-     */
-    private void ensureSelf(String requestedPatientId) {
-        String authenticatedUserId = AuthInterceptor.USER_ID_KEY.get();
-        if (authenticatedUserId == null || !authenticatedUserId.equals(requestedPatientId)) {
-            throw new SecurityException("Access denied: You can only access your own information.");
-        }
-    }
-
-    // ===================== AUTH =====================
+    // ── Auth ──────────────────────────────────────────────────────────────────
 
     @Override
     public void patientLogin(PatientLoginRequest request,
@@ -87,7 +54,8 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                                 StreamObserver<RegisterPatientResponse> observer) {
         handle(observer, () -> {
             UUID id = patientUseCase.registerPatient(
-                    request.getName(), request.getEmail(), request.getPassword(), request.getPhone()
+                    request.getName(), request.getEmail(),
+                    request.getPassword(), request.getPhone()
             );
             return RegisterPatientResponse.newBuilder()
                     .setPatientId(id.toString())
@@ -96,13 +64,16 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         });
     }
 
-    // ===================== PATIENT =====================
+    // ── Patient CRUD ──────────────────────────────────────────────────────────
 
     @Override
     public void createPatient(CreatePatientRequest request,
                               StreamObserver<CreatePatientResponse> observer) {
         handle(observer, () -> {
-            UUID id = patientUseCase.createPatient(request.getName(), request.getEmail(), request.getPhone(),request.getPassword());
+            UUID id = patientUseCase.createPatient(
+                    request.getName(), request.getEmail(),
+                    request.getPhone(), request.getPassword()
+            );
             return CreatePatientResponse.newBuilder()
                     .setPatientId(id.toString())
                     .setMessage("Patient created successfully")
@@ -117,7 +88,6 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             ensureSelf(request.getPatientId());
             Patient p = patientUseCase.getPatient(UUID.fromString(request.getPatientId()))
                     .orElseThrow(() -> new DomainException("Patient not found", Status.NOT_FOUND));
-
             return GetPatientResponse.newBuilder()
                     .setPatientId(p.getId().toString())
                     .setName(p.getName())
@@ -134,22 +104,18 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             boolean exists = patientUseCase
                     .getPatient(UUID.fromString(request.getPatientId()))
                     .isPresent();
-            return PatientExistsResponse.newBuilder()
-                    .setExists(exists)
-                    .build();
+            return PatientExistsResponse.newBuilder().setExists(exists).build();
         });
     }
 
-    // ===================== DOCTOR PROXY =====================
+    // ── Doctor discovery proxy ────────────────────────────────────────────────
 
     @Override
     public void getNearbyDoctors(NearbyDoctorsProxyRequest request,
                                  StreamObserver<NearbyDoctorsProxyResponse> observer) {
         handle(observer, () -> {
             var doctors = doctorGrpcClient.getNearbyDoctors(request.getLocationText())
-                    .stream()
-                    .map(this::mapDoctor)
-                    .collect(Collectors.toList());
+                    .stream().map(this::mapDoctor).collect(Collectors.toList());
             return NearbyDoctorsProxyResponse.newBuilder().addAllDoctors(doctors).build();
         });
     }
@@ -159,9 +125,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                                      StreamObserver<ByLocationProxyResponse> observer) {
         handle(observer, () -> {
             var doctors = doctorGrpcClient.getDoctorsByLocation(request.getGeohashPrefix())
-                    .stream()
-                    .map(this::mapDoctor)
-                    .collect(Collectors.toList());
+                    .stream().map(this::mapDoctor).collect(Collectors.toList());
             return ByLocationProxyResponse.newBuilder().addAllDoctors(doctors).build();
         });
     }
@@ -181,19 +145,23 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         });
     }
 
-    // ===================== APPOINTMENTS =====================
+    // ── Appointments proxy ────────────────────────────────────────────────────
 
     @Override
     public void bookAppointment(BookAppointmentRequest request,
                                 StreamObserver<BookAppointmentResponse> observer) {
         handle(observer, () -> {
             ensureSelf(request.getPatientId());
-            com.health.grpc.doctor.CreateAppointmentResponse res =
-                    doctorGrpcClient.createAppointment(request.getDoctorId(), request.getPatientId(), request.getDate(), request.getTime());
-
+            CreateAppointmentResponse res = doctorGrpcClient.createAppointment(
+                    request.getDoctorId(),
+                    request.getPatientId(),
+                    request.getDate(),
+                    request.getTime(),
+                    request.getReasonForVisit()
+            );
             return BookAppointmentResponse.newBuilder()
                     .setSuccess(res.getSuccess())
-                    .setAppointmentId(res.getAppointmentId())
+                    .setAppointmentId(res.getAppointment().getAppointmentId())
                     .setMessage(res.getMessage())
                     .build();
         });
@@ -204,12 +172,13 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                                   StreamObserver<CancelAppointmentResponse> observer) {
         handle(observer, () -> {
             ensureSelf(request.getPatientId());
-            com.health.grpc.doctor.CancelAppointmentResponse res = doctorGrpcClient.cancelAppointment(
+            CancelAppointmentResponse res = doctorGrpcClient.cancelAppointment(
                     request.getAppointmentId(),
                     request.getPatientId(),
                     request.getDoctorId(),
                     request.getDate(),
-                    request.getTime()
+                    request.getTime(),
+                    request.getCancellationReason()
             );
             return CancelAppointmentResponse.newBuilder()
                     .setSuccess(res.getSuccess())
@@ -223,22 +192,18 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                                   StreamObserver<MyAppointmentsResponse> observer) {
         handle(observer, () -> {
             ensureSelf(request.getPatientId());
-            var appointments = doctorGrpcClient.getMyAppointments(request.getPatientId(), request.getDate())
+            // AppointmentMessage now carries doctor_name + clinic_name
+            var appointments = doctorGrpcClient
+                    .getMyAppointments(request.getPatientId(), request.getDate())
                     .stream()
-                    .map(a -> AppointmentInfo.newBuilder()
-                            .setAppointmentId(a.getAppointmentId())
-                            .setDoctorId(a.getDoctorId())
-                            .setPatientId(a.getPatientId())
-                            .setDate(a.getDate())
-                            .setTime(a.getTime())
-                            .setStatus(AppointmentInfo.Status.valueOf(a.getStatus().name()))
-                            .build())
+                    .map(this::mapAppointment)
                     .collect(Collectors.toList());
-            return MyAppointmentsResponse.newBuilder().addAllAppointments(appointments).build();
+            return MyAppointmentsResponse.newBuilder()
+                    .addAllAppointments(appointments).build();
         });
     }
 
-    // ===================== HELPERS =====================
+    // ── Mappers ───────────────────────────────────────────────────────────────
 
     private DoctorInfo mapDoctor(DoctorMessage d) {
         return DoctorInfo.newBuilder()
@@ -248,5 +213,51 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                 .setSpecialization(d.getSpecialization())
                 .setIsActive(d.getIsActive())
                 .build();
+    }
+
+    private AppointmentInfo mapAppointment(AppointmentMessage a) {
+        AppointmentInfo.Builder b = AppointmentInfo.newBuilder()
+                .setAppointmentId(a.getAppointmentId())
+                .setDoctorId(a.getDoctorId())
+                .setPatientId(a.getPatientId())
+                .setDate(a.getDate())
+                .setTime(a.getTime())
+                .setStatus(AppointmentInfo.Status.valueOf(a.getStatus().name()));
+        // Denormalized fields — populated from appointments_by_patient row
+        if (!a.getDoctorName().isBlank())         b.setDoctorName(a.getDoctorName());
+        if (!a.getClinicName().isBlank())         b.setClinicName(a.getClinicName());
+        if (!a.getReasonForVisit().isBlank())     b.setReasonForVisit(a.getReasonForVisit());
+        if (!a.getCancellationReason().isBlank()) b.setCancellationReason(a.getCancellationReason());
+        return b.build();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void ensureSelf(String requestedPatientId) {
+        String authenticatedUserId = AuthInterceptor.USER_ID_KEY.get();
+        if (authenticatedUserId == null || !authenticatedUserId.equals(requestedPatientId)) {
+            throw new SecurityException("Access denied: you can only access your own information.");
+        }
+    }
+
+    private <T> void handle(StreamObserver<T> observer, Supplier<T> supplier) {
+        try {
+            T response = supplier.get();
+            observer.onNext(response);
+            observer.onCompleted();
+        } catch (DomainException e) {
+            log.warn("Domain error: {}", e.getMessage());
+            observer.onError(e.getGrpcStatus()
+                    .withDescription(e.getMessage()).asRuntimeException());
+        } catch (SecurityException e) {
+            log.warn("Security error: {}", e.getMessage());
+            observer.onError(Status.PERMISSION_DENIED
+                    .withDescription(e.getMessage()).asRuntimeException());
+        } catch (Exception e) {
+            log.error("Unexpected error", e);
+            observer.onError(Status.INTERNAL
+                    .withDescription("An internal error occurred")
+                    .asRuntimeException());
+        }
     }
 }

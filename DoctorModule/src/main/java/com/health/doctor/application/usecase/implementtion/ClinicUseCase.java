@@ -22,7 +22,15 @@ public class ClinicUseCase implements ClinicInterface {
 
     @Override
     public UUID createClinic(String name, String locationText) {
+        if (name == null || locationText == null)
+            throw new RuntimeException("Name or location is required");
+
+        Clinic existing = repo.findByLocationText(locationText);
+        if (existing != null && locationText.equals(existing.getLocationText()))
+            throw new RuntimeException("Clinic already exists");
+
         Location location = locationService.resolve(locationText);
+
 
         UUID clinicId = UUID.randomUUID();
 
@@ -40,16 +48,26 @@ public class ClinicUseCase implements ClinicInterface {
 
     @Override
     public List<Clinic> getClinicsByLocationText(String locationText) {
-        return List.of();
+        Clinic clinic = repo.findByLocationText(locationText);
+        return clinic != null ? List.of(clinic) : List.of();
     }
 
     @Override
     public List<Clinic> getClinicsByLocationGeohash(String geohashPrefix) {
-        return List.of();
+        Clinic clinic = repo.findByLocationGeohash(geohashPrefix);
+        return clinic != null ? List.of(clinic) : List.of();
     }
+
+
 
     @Override
     public Clinic getClinicById(UUID clinicId) {
         return repo.findById(clinicId);
+    }
+
+    @Override
+    public List<Clinic> findByName(String name) {
+        return List.of(repo.findByName(name));
+
     }
 }

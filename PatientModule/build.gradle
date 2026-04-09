@@ -1,3 +1,4 @@
+//PatientModule/build.gradle
 plugins {
     id 'service-conventions'
 }
@@ -13,11 +14,4 @@ dependencies {
 
 application {
     mainClass = 'com.health.patient.Application'
-}
-
-micronaut {
-    processing {
-        annotations('com.health.patient.*')
-        annotations('com.health.infrastructure.*')
-    }
 }

@@ -22,6 +22,8 @@ public class DoctorGrpcClient {
         this.stub = DoctorGrpcServiceGrpc.newBlockingStub(channel);
     }
 
+    // ── Doctor discovery ──────────────────────────────────────────────────────
+
     public List<DoctorMessage> getNearbyDoctors(String locationText) {
         try {
             return stub.getNearbyDoctors(NearbyDoctorsRequest.newBuilder()
@@ -52,13 +54,20 @@ public class DoctorGrpcClient {
         }
     }
 
+    // ── Appointments ──────────────────────────────────────────────────────────
+
     public CreateAppointmentResponse createAppointment(String doctorId, String patientId,
-                                     String date, String time) {
+                                                       String date, String time,
+                                                       String reasonForVisit) {
         try {
             return stub.createAppointment(
                     CreateAppointmentRequest.newBuilder()
-                            .setDoctorId(doctorId).setPatientId(patientId)
-                            .setDate(date).setTime(time).build()
+                            .setDoctorId(doctorId)
+                            .setPatientId(patientId)
+                            .setDate(date)
+                            .setTime(time)
+                            .setReasonForVisit(reasonForVisit != null ? reasonForVisit : "")
+                            .build()
             );
         } catch (Exception e) {
             log.error("createAppointment error", e);
@@ -69,13 +78,20 @@ public class DoctorGrpcClient {
         }
     }
 
+
     public CancelAppointmentResponse cancelAppointment(String appointmentId, String patientId,
-                                     String doctorId, String date, String time) {
+                                                       String doctorId, String date, String time,
+                                                       String cancellationReason) {
         try {
             return stub.cancelAppointment(
                     CancelAppointmentRequest.newBuilder()
-                            .setAppointmentId(appointmentId).setPatientId(patientId)
-                            .setDoctorId(doctorId).setDate(date).setTime(time).build()
+                            .setAppointmentId(appointmentId)
+                            .setPatientId(patientId)
+                            .setDoctorId(doctorId)
+                            .setDate(date)
+                            .setTime(time)
+                            .setCancellationReason(cancellationReason != null ? cancellationReason : "")
+                            .build()
             );
         } catch (Exception e) {
             log.error("cancelAppointment error", e);

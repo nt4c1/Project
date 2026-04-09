@@ -7,7 +7,7 @@ import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import jakarta.inject.Singleton;
 
 import java.time.DayOfWeek;
-import java.time.Instant;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Optional;
 import java.util.Set;
@@ -26,7 +26,7 @@ public class ScheduleUseCase implements ScheduleInterface {
     }
 
     @Override
-    public void createSchedule(UUID doctorId, Set<String> workingDays, Instant startTime, Instant endTime, int slotDuration, int maxPerDay) {
+    public void createSchedule(UUID doctorId, Set<String> workingDays, LocalTime startTime, LocalTime endTime, int slotDuration, int maxPerDay) {
         Set<DayOfWeek> days = workingDays.stream()
                 .map(DayOfWeek::valueOf)
                 .collect(Collectors.toSet());
@@ -38,7 +38,7 @@ public class ScheduleUseCase implements ScheduleInterface {
     }
 
     @Override
-    public Optional<DoctorSchedule> getSchedule(UUID doctorId) {
+    public Optional<Optional<DoctorSchedule>> getSchedule(UUID doctorId) {
         if(doctorId == null ) throw new NotFoundException("doctorId is required");
         return Optional.ofNullable(repo.findByDoctorId(doctorId));
     }

@@ -1,3 +1,4 @@
+//DoctorModule/build.gradle
 plugins {
     id 'service-conventions'
 }
@@ -6,20 +7,14 @@ dependencies {
     implementation 'com.health:Common:0.1' // proto+dto
     implementation 'io.micronaut:micronaut-http-client'  // for Photon
     implementation 'ch.hsr:geohash:1.4.0'
-    annotationProcessor 'io.micronaut:micronaut-inject-java'
     implementation 'org.mindrot:jbcrypt:0.4'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 }
-
+tasks.named("run") {
+    systemProperty "org.slf4j.simpleLogger.defaultLogLevel", "info"
+}
 application {
     mainClass = 'com.health.doctor.Application'
-}
-
-micronaut {
-    processing {
-        annotations('com.health.doctor.*')
-        annotations('com.health.infrastructure.*')
-    }
 }

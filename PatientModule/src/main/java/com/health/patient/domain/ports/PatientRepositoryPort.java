@@ -7,6 +7,8 @@ import java.util.UUID;
 
 public interface PatientRepositoryPort {
     void save(Patient patient);
+
     Optional<Patient> findById(UUID patientId);
+
     Optional<Patient> findByEmail(String email);
 }
