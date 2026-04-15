@@ -28,4 +28,6 @@ public interface AppointmentRepositoryPort {
     Optional<Appointment> findById(UUID appointmentId);
 
     void decrementCount(UUID doctorId, LocalDate date);
+
+    void postpone(LocalDate oldDate , Appointment updated);
 }

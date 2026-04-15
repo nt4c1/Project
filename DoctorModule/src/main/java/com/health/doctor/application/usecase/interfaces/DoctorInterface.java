@@ -24,4 +24,8 @@ public interface DoctorInterface {
     List<Doctor> getDoctorsByLocationGeohash(String geohashPrefix);
 
     void updateDoctorLocation(UUID doctorId, String locationText);
+
+    void updateDoctor(UUID doctorId, String email, String password);
+
+    void deleteDoctor(UUID doctorId, String email, String password);
 }

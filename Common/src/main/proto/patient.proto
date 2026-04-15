@@ -15,9 +15,10 @@ service PatientGrpcService {
   rpc RegisterPatient      (RegisterPatientRequest)     returns (RegisterPatientResponse);
 
   // Patient
-  rpc CreatePatient        (CreatePatientRequest)       returns (CreatePatientResponse);
   rpc GetPatient           (GetPatientRequest)          returns (GetPatientResponse);
   rpc PatientExists        (PatientExistsRequest)       returns (PatientExistsResponse);
+  rpc UpdatePatient        (UpdatePatientRequest)       returns (UpdatePatientResponse);
+  rpc DeletePatient        (DeletePatientRequest)       returns (DeletePatientResponse);
 
   // Doctor discovery proxy
   rpc GetNearbyDoctors     (NearbyDoctorsProxyRequest)  returns (NearbyDoctorsProxyResponse);
@@ -47,12 +48,11 @@ message RegisterPatientRequest {
   string password = 3;
   string phone    = 4;
 }
+
 message RegisterPatientResponse { string patient_id = 1; string message = 2; }
 
 // ── Patient ────────────────────────────────────────────────
 
-message CreatePatientRequest  { string name = 1; string email = 2; string phone = 3; string password = 4; }
-message CreatePatientResponse { string patient_id = 1; string message = 2; }
 
 message GetPatientRequest  { string patient_id = 1; }
 message GetPatientResponse {
@@ -137,4 +137,23 @@ message AppointmentInfo {
   string clinic_name         = 8;   // NEW: denormalized
   string reason_for_visit    = 9;   // NEW
   string cancellation_reason = 10;  // NEW
+}
+message UpdatePatientRequest {
+  string email = 1;
+  string password = 2;
+  string patient_id = 3;
+}
+message UpdatePatientResponse {
+  string message = 1;
+  string patient_id = 2;
+  string email = 3;
+  string phone = 4;
+}
+message DeletePatientRequest{
+  string email = 1;
+  string password = 2;
+  string patient_id = 3;
+}
+message DeletePatientResponse{
+  string message = 1;
 }

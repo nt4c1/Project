@@ -6,6 +6,7 @@ import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.model.DoctorType;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
+import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.ValidateTokenRequest;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.doctor.*;
@@ -20,18 +21,19 @@ import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+
+
 @Slf4j
 @GrpcService
 @Singleton
 public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBase {
 
-    private final AppointmentInterface appointmentsUseCase;
-    private final ClinicInterface      clinicUseCase;
-    private final DoctorInterface      doctorUseCase;
-    private final ScheduleInterface    scheduleUseCase;
-    private final DoctorRepositoryPort doctorRepo;
+    private final AppointmentInterface      appointmentsUseCase;
+    private final ClinicInterface           clinicUseCase;
+    private final DoctorInterface           doctorUseCase;
+    private final ScheduleInterface         scheduleUseCase;
+    private final DoctorRepositoryPort      doctorRepo;
     private final AppointmentRepositoryPort appointmentRepo;
-
     public DoctorGrpcApi(AppointmentInterface appointmentsUseCase,
                          ClinicInterface clinicUseCase,
                          DoctorInterface doctorUseCase,
@@ -58,19 +60,16 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                 try { clinicId = UUID.fromString(raw.trim()); }
                 catch (IllegalArgumentException ignored) { }
             }
-
             DoctorType type = DoctorType.valueOf(request.getType().toString());
             UUID id = doctorUseCase.createDoctor(
                     request.getName(), clinicId, type,
                     request.getSpecialization(),
                     request.getEmail(), request.getPassword()
             );
-
             Doctor doctor = doctorRepo.findById(id)
                     .orElseThrow(() -> new DomainException("Doctor creation failed", Status.INTERNAL));
-
             observer.onNext(CreateDoctorResponse.newBuilder()
-                    .setDoctor(toMsg(doctor))
+                    .setDoctor(MapperClass.toMsg(doctor))
                     .setMessage("Doctor created successfully")
                     .build());
             observer.onCompleted();
@@ -83,7 +82,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         handle(observer, () -> {
             Doctor doctor = doctorRepo.findById(UUID.fromString(request.getDoctorId()))
                     .orElseThrow(() -> new DomainException("Doctor not found", Status.NOT_FOUND));
-            observer.onNext(GetDoctorResponse.newBuilder().setDoctor(toMsg(doctor)).build());
+            observer.onNext(GetDoctorResponse.newBuilder().setDoctor(MapperClass.toMsg(doctor)).build());
             observer.onCompleted();
         });
     }
@@ -99,10 +98,43 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     }
 
     @Override
+    public void updateDoctor(UpdateDoctorRequest request,
+                             StreamObserver<UpdateDoctorResponse> observer){
+        handle(observer, () -> {
+            UUID doctorId = UUID.fromString(request.getDoctorId());
+            doctorUseCase.updateDoctor(doctorId, request.getEmail(), request.getPassword());
+            
+            Doctor updated = doctorRepo.findById(doctorId)
+                    .orElseThrow(() -> new DomainException("Doctor not found after update", Status.NOT_FOUND));
+
+            observer.onNext(UpdateDoctorResponse.newBuilder()
+                    .setMessage("Doctor updated successfully")
+                    .setDoctor(MapperClass.toMsg(updated))
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void deleteDoctor (DeleteDoctorRequest request,
+                              StreamObserver<DeleteDoctorResponse> observer){
+        handle(observer, () -> {
+            doctorUseCase.deleteDoctor(
+                    UUID.fromString(request.getDoctorId()),
+                    request.getEmail(),
+                    request.getPassword()
+            );
+            observer.onNext(DeleteDoctorResponse.newBuilder()
+                    .setMessage("Doctor deleted successfully")
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
     public void updateLocation(UpdateLocationRequest request,
                                StreamObserver<UpdateLocationResponse> observer) {
         handle(observer, () -> {
-            // Method renamed to updateDoctorLocation in DoctorInterface
             doctorUseCase.updateDoctorLocation(
                     UUID.fromString(request.getDoctorId()),
                     request.getLocationText()
@@ -142,7 +174,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             List<Doctor> doctors = doctorUseCase.getDoctorsByClinic(
                     UUID.fromString(request.getClinicId()));
             observer.onNext(GetByClinicResponse.newBuilder()
-                    .addAllDoctors(doctors.stream().map(this::toMsg).collect(Collectors.toList()))
+                    .addAllDoctors(doctors.stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });
@@ -173,9 +205,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void getDoctorSchedule(GetScheduleRequest request,
                                   StreamObserver<GetScheduleResponse> observer) {
         handle(observer, () -> {
-            // scheduleUseCase.getSchedule returns Optional<Optional<DoctorSchedule>>
             DoctorSchedule s = scheduleUseCase.getSchedule(UUID.fromString(request.getDoctorId()))
-                    .flatMap(opt -> opt)
                     .orElseThrow(() -> new com.health.doctor.domain.exception
                             .NotFoundException("No schedule for doctor: " + request.getDoctorId()));
             observer.onNext(GetScheduleResponse.newBuilder()
@@ -199,7 +229,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         handle(observer, () -> {
             List<Doctor> doctors = doctorUseCase.getDoctorsByLocationText(request.getLocationText());
             observer.onNext(NearbyDoctorsResponse.newBuilder()
-                    .addAllDoctors(doctors.stream().map(this::toMsg).collect(Collectors.toList()))
+                    .addAllDoctors(doctors.stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });
@@ -211,7 +241,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         handle(observer, () -> {
             List<Doctor> doctors = doctorUseCase.getDoctorsByLocationGeohash(request.getGeohashPrefix());
             observer.onNext(ByLocationResponse.newBuilder()
-                    .addAllDoctors(doctors.stream().map(this::toMsg).collect(Collectors.toList()))
+                    .addAllDoctors(doctors.stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });
@@ -228,13 +258,13 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     UUID.fromString(request.getPatientId()),
                     LocalDate.parse(request.getDate()),
                     LocalTime.parse(request.getTime()),
-                    request.getReasonForVisit()   // NEW: passed through
+                    request.getReasonForVisit()
             );
             Appointment appt = appointmentRepo.findById(id)
                     .orElseThrow(() -> new DomainException("Appointment creation failed", Status.INTERNAL));
             observer.onNext(CreateAppointmentResponse.newBuilder()
                     .setSuccess(true)
-                    .setAppointment(toApptMsg(appt))
+                    .setAppointment(MapperClass.toApptMsg(appt))
                     .setMessage("Appointment created successfully")
                     .build());
             observer.onCompleted();
@@ -251,7 +281,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     UUID.fromString(request.getDoctorId()),
                     LocalDate.parse(request.getDate()),
                     LocalTime.parse(request.getTime()),
-                    request.getCancellationReason()   // NEW: passed through
+                    request.getCancellationReason()
             );
             observer.onNext(CancelAppointmentResponse.newBuilder()
                     .setSuccess(true).setMessage("Cancelled").build());
@@ -268,7 +298,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     LocalDate.parse(request.getDate())
             );
             observer.onNext(GetAppointmentsResponse.newBuilder()
-                    .addAllAppointments(list.stream().map(this::toApptMsg).collect(Collectors.toList()))
+                    .addAllAppointments(list.stream().map(MapperClass::toApptMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });
@@ -283,7 +313,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     LocalDate.parse(request.getDate())
             );
             observer.onNext(GetAppointmentsResponse.newBuilder()
-                    .addAllAppointments(list.stream().map(this::toApptMsg).collect(Collectors.toList()))
+                    .addAllAppointments(list.stream().map(MapperClass::toApptMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });
@@ -298,7 +328,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     LocalDate.parse(request.getDate())
             );
             observer.onNext(GetMyAppointmentsResponse.newBuilder()
-                    .addAllAppointments(list.stream().map(this::toApptMsg).collect(Collectors.toList()))
+                    .addAllAppointments(list.stream().map(MapperClass::toApptMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });
@@ -308,7 +338,12 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void acceptAppointment(AppointmentActionRequest request,
                                   StreamObserver<AppointmentActionResponse> observer) {
         handle(observer, () -> {
-            appointmentsUseCase.acceptAppointment(toAppointment(request));
+            // Load current state from DB
+            Appointment current = appointmentRepo.findById(
+                            UUID.fromString(request.getAppointmentId()))
+                    .orElseThrow(() -> new DomainException("Appointment not found", Status.NOT_FOUND));
+
+            appointmentsUseCase.acceptAppointment(current);
             observer.onNext(AppointmentActionResponse.newBuilder()
                     .setSuccess(true).setMessage("Accepted").build());
             observer.onCompleted();
@@ -319,7 +354,12 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void postponeAppointment(AppointmentActionRequest request,
                                     StreamObserver<AppointmentActionResponse> observer) {
         handle(observer, () -> {
-            appointmentsUseCase.postponeAppointment(toAppointment(request));
+            // Load current state — we need current status + current date as oldDate
+            Appointment current = appointmentRepo.findById(
+                            UUID.fromString(request.getAppointmentId()))
+                    .orElseThrow(() -> new DomainException("Appointment not found", Status.NOT_FOUND));
+
+            appointmentsUseCase.postponeAppointment(current);
             observer.onNext(AppointmentActionResponse.newBuilder()
                     .setSuccess(true).setMessage("Postponed").build());
             observer.onCompleted();
@@ -349,51 +389,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         });
     }
 
-    // ── Mappers ───────────────────────────────────────────────────────────────
-
-    private DoctorMessage toMsg(Doctor d) {
-        DoctorMessage.Builder b = DoctorMessage.newBuilder()
-                .setDoctorId(d.getId() != null ? d.getId().toString() : "")
-                .setName(d.getName() != null ? d.getName() : "")
-                .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
-                .setIsActive(d.isActive());
-        if (d.getType() != null)
-            b.setType(com.health.grpc.doctor.DoctorType.valueOf(d.getType().name()));
-        if (d.getClinicId() != null)
-            b.setClinicId(d.getClinicId().toString());
-        return b.build();
-    }
-
-    /** Maps domain Appointment → enriched AppointmentMessage (includes denormalized fields). */
-    private AppointmentMessage toApptMsg(Appointment a) {
-        AppointmentMessage.Builder b = AppointmentMessage.newBuilder()
-                .setAppointmentId(a.getId().toString())
-                .setDoctorId(a.getDoctorId().toString())
-                .setPatientId(a.getPatientId().toString())
-                .setDate(a.getAppointmentDate().toString())
-                .setTime(a.getScheduleTime().toString())
-                .setStatus(com.health.grpc.doctor.AppointmentStatus.valueOf(a.getStatus().name()));
-        if (a.getPatientName()        != null) b.setPatientName(a.getPatientName());
-        if (a.getPatientPhone()       != null) b.setPatientPhone(a.getPatientPhone());
-        if (a.getDoctorName()         != null) b.setDoctorName(a.getDoctorName());
-        if (a.getClinicName()         != null) b.setClinicName(a.getClinicName());
-        if (a.getReasonForVisit()     != null) b.setReasonForVisit(a.getReasonForVisit());
-        if (a.getCancellationReason() != null) b.setCancellationReason(a.getCancellationReason());
-        return b.build();
-    }
-
-    private Appointment toAppointment(AppointmentActionRequest r) {
-        return new Appointment(
-                UUID.fromString(r.getAppointmentId()),
-                UUID.fromString(r.getDoctorId()),
-                UUID.fromString(r.getPatientId()),
-                LocalDate.parse(r.getDate()),
-                LocalTime.parse(r.getTime()),
-                com.health.doctor.domain.model.AppointmentStatus.valueOf(r.getStatus().name()),
-                null, // createdAt
-                null  // updatedAt
-        );
-    }
+    // ── Error handler ─────────────────────────────────────────────────────────
 
     private <T> void handle(StreamObserver<T> observer, Runnable action) {
         try {

@@ -107,4 +107,22 @@ public class PatientUseCase implements PatientInterface {
                     .build();
         }
     }
+
+    @Override
+    public void updatePatient(UUID patientId, String email, String password) {
+        if (patientId == null) throw new InvalidArgumentException("Patient ID is required");
+        if (email == null || email.isBlank()) throw new InvalidArgumentException("Email is required");
+        if (password == null || password.isBlank()) throw new InvalidArgumentException("Password is required");
+
+        repo.updatePatient(patientId, email, password);
+    }
+
+    @Override
+    public void deletePatient(UUID patientId, String email, String password) {
+        if (patientId == null) throw new InvalidArgumentException("Patient ID is required");
+        if (email == null || email.isBlank()) throw new InvalidArgumentException("Email is required");
+        if (password == null || password.isBlank()) throw new InvalidArgumentException("Password is required");
+
+        repo.deletePatient(patientId);
+    }
 }

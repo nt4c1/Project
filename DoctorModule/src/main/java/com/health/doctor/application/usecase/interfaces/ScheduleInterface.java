@@ -10,5 +10,5 @@ import java.util.UUID;
 public interface ScheduleInterface {
     public void createSchedule(UUID doctorId, Set<String> workingDays, LocalTime startTime,
                                LocalTime endTime, int slotDuration, int maxPerDay);
-    Optional<Optional<DoctorSchedule>> getSchedule(UUID doctorId);
+    Optional<DoctorSchedule>  getSchedule(UUID doctorId);
 }

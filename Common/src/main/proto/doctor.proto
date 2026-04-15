@@ -17,6 +17,8 @@ service DoctorGrpcService {
   rpc GetDoctor                (GetDoctorRequest)            returns (GetDoctorResponse);
   rpc DoctorExists             (DoctorExistsRequest)         returns (DoctorExistsResponse);
   rpc UpdateLocation           (UpdateLocationRequest)       returns (UpdateLocationResponse);
+  rpc UpdateDoctor             (UpdateDoctorRequest)         returns (UpdateDoctorResponse);
+  rpc DeleteDoctor             (DeleteDoctorRequest)         returns (DeleteDoctorResponse);
 
   // Clinic
   rpc CreateClinic             (CreateClinicRequest)         returns (CreateClinicResponse);
@@ -39,7 +41,6 @@ service DoctorGrpcService {
   rpc AcceptAppointment        (AppointmentActionRequest)    returns (AppointmentActionResponse);
   rpc PostponeAppointment      (AppointmentActionRequest)    returns (AppointmentActionResponse);
 }
-
 // ── Enums ──────────────────────────────────────────────────
 
 enum DoctorType {
@@ -200,4 +201,25 @@ message AppointmentMessage {
   string            clinic_name         = 10;
   string            reason_for_visit    = 11;
   string            cancellation_reason = 12;
+}
+
+message UpdateDoctorRequest {
+  string email = 1;
+  string password = 2;
+  string doctor_id = 3;
+}
+
+message UpdateDoctorResponse {
+  string message = 1;
+  DoctorMessage doctor = 2;
+}
+
+message DeleteDoctorRequest {
+  string email = 1;
+  string password = 2;
+  string doctor_id = 3;
+}
+
+message DeleteDoctorResponse{
+  string message = 1;
 }

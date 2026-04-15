@@ -18,4 +18,9 @@ public interface PatientInterface {
     PatientLoginResponse loginPatient(String email, String password);
 
     ValidateTokenResponse validatePatient(String token);
+
+    void updatePatient(UUID patientId, String email, String password);
+
+    void deletePatient(UUID patientId, String email, String password);
+
 }

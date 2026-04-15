@@ -11,4 +11,5 @@ public interface ClinicInterface {
     List<Clinic> getClinicsByLocationGeohash(String geohashPrefix);
     Clinic getClinicById(UUID clinicId);
     List<Clinic> findByName(String name);
+    List<Clinic> getNearbyClinicsByLocationText(String locationText);
 }

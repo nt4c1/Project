@@ -67,21 +67,6 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     // ── Patient CRUD ──────────────────────────────────────────────────────────
 
     @Override
-    public void createPatient(CreatePatientRequest request,
-                              StreamObserver<CreatePatientResponse> observer) {
-        handle(observer, () -> {
-            UUID id = patientUseCase.createPatient(
-                    request.getName(), request.getEmail(),
-                    request.getPhone(), request.getPassword()
-            );
-            return CreatePatientResponse.newBuilder()
-                    .setPatientId(id.toString())
-                    .setMessage("Patient created successfully")
-                    .build();
-        });
-    }
-
-    @Override
     public void getPatient(GetPatientRequest request,
                            StreamObserver<GetPatientResponse> observer) {
         handle(observer, () -> {
@@ -105,6 +90,42 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                     .getPatient(UUID.fromString(request.getPatientId()))
                     .isPresent();
             return PatientExistsResponse.newBuilder().setExists(exists).build();
+        });
+    }
+    
+    @Override
+    public void updatePatient(UpdatePatientRequest request,
+                              StreamObserver<UpdatePatientResponse> observer){
+        handle(observer, () -> {
+            ensureSelf(request.getPatientId());
+            UUID patientId = UUID.fromString(request.getPatientId());
+            patientUseCase.updatePatient(patientId, request.getEmail(), request.getPassword());
+            
+            Patient updated = patientUseCase.getPatient(patientId)
+                    .orElseThrow(() -> new DomainException("Patient not found after update", Status.NOT_FOUND));
+
+            return UpdatePatientResponse.newBuilder()
+                    .setMessage("Patient updated successfully")
+                    .setPatientId(updated.getId().toString())
+                    .setEmail(updated.getEmail())
+                    .setPhone(updated.getPhone())
+                    .build();
+        });
+    }
+    
+    @Override
+    public void deletePatient(DeletePatientRequest request,
+                              StreamObserver<DeletePatientResponse> observer) {
+        handle(observer, () -> {
+            ensureSelf(request.getPatientId());
+            patientUseCase.deletePatient(
+                    UUID.fromString(request.getPatientId()),
+                    request.getEmail(),
+                    request.getPassword()
+            );
+            return DeletePatientResponse.newBuilder()
+                    .setMessage("Patient deleted successfully")
+                    .build();
         });
     }
 

@@ -2,14 +2,17 @@ package com.health.doctor.application.usecase.implementtion;
 
 import com.health.doctor.application.service.LocationService;
 import com.health.doctor.application.usecase.interfaces.ClinicInterface;
+import com.health.doctor.domain.exception.InvalidArgumentException;
 import com.health.doctor.domain.model.Clinic;
 import com.health.doctor.domain.model.Location;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import jakarta.inject.Singleton;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Singleton
 public class ClinicUseCase implements ClinicInterface {
     private final ClinicRepositoryPort repo;
@@ -70,4 +73,19 @@ public class ClinicUseCase implements ClinicInterface {
         return List.of(repo.findByName(name));
 
     }
+
+    @Override
+    public List<Clinic> getNearbyClinicsByLocationText(String locationText) {
+        if (locationText == null || locationText.isBlank())
+            throw new InvalidArgumentException("Location text is required");
+
+        Location location = locationService.resolve(locationText);
+        String   geohash  = location.getGeohash().substring(0, 5);
+
+        log.info("Searching clinics near geohash={} lat={} lon={}",
+                geohash, location.getLatitude(), location.getLongitude());
+
+        return repo.findNearby(geohash, location.getLatitude(), location.getLongitude());
+    }
+
 }

@@ -18,4 +18,7 @@ public class Location {
         this.locationText = locationText;
     }
 
+    public Location(String locationText) {
+        this.locationText=locationText;
+    }
 }

@@ -11,4 +11,8 @@ public interface PatientRepositoryPort {
     Optional<Patient> findById(UUID patientId);
 
     Optional<Patient> findByEmail(String email);
+
+    void updatePatient(UUID patientID,String email,String password);
+
+    void deletePatient(UUID patientId);
 }

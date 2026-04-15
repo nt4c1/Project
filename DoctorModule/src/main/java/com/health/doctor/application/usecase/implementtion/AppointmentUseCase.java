@@ -13,6 +13,7 @@ import jakarta.inject.Singleton;
 import java.time.*;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Singleton
@@ -43,11 +44,14 @@ public class AppointmentUseCase implements AppointmentInterface {
                     "Doctor does not work on " + date.getDayOfWeek());
         }
 
+        if(time.isBefore(schedule.getStartTime()))
+            throw new InvalidArgumentException("Selected time is before doctor's opening time");
+
         if (!schedule.isValidSlot(time)) {
             throw new InvalidArgumentException("Selected time is outside of doctor's working hours");
         }
 
-        Instant now = Instant.now();
+        Instant now = Instant.now(Clock.system(NPT));
         UUID appointmentId = UUID.randomUUID();
 
         Appointment appointment = new Appointment(
@@ -88,19 +92,42 @@ public class AppointmentUseCase implements AppointmentInterface {
         if (appointment.getStatus() == AppointmentStatus.CANCELLED)
             throw new InvalidArgumentException("Cannot postpone a cancelled appointment");
 
-        LocalDate newDate = appointment.getAppointmentDate().plusDays(1);
+        DoctorSchedule schedule = scheduleRepo.findByDoctorId(appointment.getDoctorId())
+                .orElseThrow(() -> new InvalidArgumentException("Doctor schedule not found for doctor: " + appointment.getDoctorId()));
+
+        LocalDate nextWorkingDay = nextWorkingDay(appointment.getAppointmentDate(), schedule);
+        LocalDate oldDate = appointment.getAppointmentDate();
 
         Appointment postponed = new Appointment(
                 appointment.getId(),
                 appointment.getDoctorId(),
                 appointment.getPatientId(),
-                newDate,
+                nextWorkingDay,
                 appointment.getScheduleTime(),
                 AppointmentStatus.POSTPONED,
                 appointment.getCreatedAt(),
                 ZonedDateTime.now(NPT).toInstant()
         );
-        repo.updateStatus(postponed, AppointmentStatus.POSTPONED.name());
+        repo.postpone(oldDate, postponed);
+    }
+
+    private LocalDate nextWorkingDay(LocalDate from,DoctorSchedule schedule) {
+        Set<DayOfWeek> workingDays = schedule.getWorkingDays();
+
+        if(workingDays == null || workingDays.isEmpty())
+            throw new InvalidArgumentException("Doctor has no working days configured");
+
+        LocalDate candidate = from.plusDays(1);
+        int limit = 30;
+        while (limit-- > 0 ){
+            if (workingDays.contains(candidate.getDayOfWeek())){
+                return candidate;
+            }
+            candidate = candidate.plusDays(1);
+        }
+        throw new InvalidArgumentException(
+                "No Working Days Found"+schedule.getDoctorId()
+        );
     }
 
     @Override

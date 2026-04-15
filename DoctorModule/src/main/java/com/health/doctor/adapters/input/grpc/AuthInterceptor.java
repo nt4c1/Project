@@ -1,6 +1,8 @@
-package com.health.patient.adapters.output.grpc;
+package com.health.doctor.adapters.input.grpc;
 
-import com.health.infrastructure.JwtProvider;
+
+
+import com.health.doctor.infrastructure.JwtProvider;
 import io.grpc.*;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -26,9 +28,9 @@ public class AuthInterceptor implements ServerInterceptor {
 
         String methodName = call.getMethodDescriptor().getFullMethodName();
 
-        if (methodName.endsWith("PatientLogin") || 
-            methodName.endsWith("RegisterPatient") ||
-            methodName.endsWith("ValidatePatientToken")) {
+        if (methodName.endsWith("DoctorLogin") ||
+                methodName.endsWith("CreateDoctor") ||
+                methodName.endsWith("ValidateDoctorToken")) {
             return next.startCall(call, headers);
         }
 

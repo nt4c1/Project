@@ -18,7 +18,14 @@ public interface DoctorRepositoryPort {
 
     List<Doctor> findByGeohashPrefix(String prefix);
 
-    List<Doctor> findNearby(String geohash);
+    List<Doctor> findNearby(String geohash, double lat, double lon);
 
     List<Doctor> findByClinicId(UUID clinicId);
+
+    void updateDoctor(UUID doctorId, String email, String password);
+
+    void deleteDoctor(UUID doctorId, String email, String password);
+
+    UUID findClinicId(UUID doctorId);
+
 }

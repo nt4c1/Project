@@ -34,13 +34,6 @@ public class DoctorSchedule {
         this.maxAppointmentsPerDay = maxAppointmentsPerDay;
     }
 
-    public DoctorSchedule(UUID doctorId, Set<DayOfWeek> workingDays,
-                          LocalTime startTime, LocalTime endTime,
-                          int slotDurationMinutes, int maxAppointmentsPerDay) {
-        this(doctorId, null, workingDays, startTime, endTime,
-                slotDurationMinutes, maxAppointmentsPerDay);
-    }
-
     public boolean isWorkingDay(DayOfWeek day) {
         return workingDays.contains(day);
     }
