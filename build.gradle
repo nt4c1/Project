@@ -1,93 +1,31 @@
-/*
 plugins {
-    id("io.micronaut.application") version "4.6.2"
-    id("com.google.protobuf") version "0.9.2"
-    id("com.gradleup.shadow") version "8.3.9"
+    id 'io.micronaut.application'  version '4.6.2' apply false
+    id 'io.micronaut.library'      version '4.6.2' apply false
+    id 'com.google.protobuf'       version '0.9.2' apply false
 }
 
-version = "0.1"
-group = "com.module"
-
-tasks.register('startAll') {
-    dependsOn ':DoctorModule:run', ':PatientModule:run'
+// Versions shared across all submodules
+ext {
+    micronautVersion   = '4.6.2'
+    grpcVersion        = '1.75.0'
+    cassandraVersion   = '4.17.0'
+    lombokVersion      = '1.18.42'
+    jbcryptVersion     = '0.4'
+    geohashVersion     = '1.4.0'
+    jjwtVersion        = '0.13.0'
 }
 
-repositories {
-    mavenCentral()
-}
+subprojects {
+    apply plugin: 'java'
 
-dependencies {
-    annotationProcessor("org.projectlombok:lombok")
-    annotationProcessor("io.micronaut.security:micronaut-security-annotations")
-    annotationProcessor("io.micronaut.serde:micronaut-serde-processor")
-    implementation("io.micronaut:micronaut-discovery-core")
-    implementation("io.micronaut.cassandra:micronaut-cassandra")
-    implementation("io.micronaut.grpc:micronaut-grpc-runtime")
-    implementation("io.micronaut.security:micronaut-security")
-    implementation("io.micronaut.security:micronaut-security-jwt")
-    implementation("io.micronaut.serde:micronaut-serde-jackson")
-    implementation("javax.annotation:javax.annotation-api")
-    compileOnly("org.projectlombok:lombok")
-    runtimeOnly("ch.qos.logback:logback-classic")
-    testImplementation("org.junit.platform:junit-platform-suite-engine")
-    testImplementation("org.mockito:mockito-core")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
+    repositories {
+        mavenCentral()
+    }
 
-
-
-application {
-    mainClass = "com.module.Application"
-}
-
-java {
-    sourceCompatibility = JavaVersion.toVersion("21")
-    targetCompatibility = JavaVersion.toVersion("21")
-}
-
-
-
-
-
-
-sourceSets {
-    main {
-        java {
-            srcDirs("build/generated/source/proto/main/grpc")
-            srcDirs("build/generated/source/proto/main/java")
-        }
+    // Every submodule gets Lombok and Jakarta annotations
+    dependencies {
+        annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+        compileOnly         "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+        compileOnly         'jakarta.annotation:jakarta.annotation-api:2.1.1'
     }
 }
-
-protobuf {
-    protoc { artifact = "com.google.protobuf:protoc:3.25.8" }
-    plugins {
-        grpc { artifact = "io.grpc:protoc-gen-grpc-java:1.75.0" }
-    }
-    generateProtoTasks {
-        all()*.plugins { grpc {} }
-    }
-}
-
-
-
-micronaut {
-    testRuntime("junit5")
-    processing {
-        incremental(true)
-        annotations("com.module.*")
-    }
-}
-
-
-tasks.named("dockerfileNative") {
-    jdkVersion = "21"
-}
-
-
-
-
-
-
-
-*/

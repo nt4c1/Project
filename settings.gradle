@@ -1,11 +1,6 @@
-pluginManagement {
-    includeBuild("Common")
-}
+rootProject.name = 'health-service'
 
-includeBuild("Common")
-
-rootProject.name = "Modular"
-
-include("DoctorModule")
-include("PatientModule")
-include 'Infrastructure'
+include ':app'
+include ':common'
+include ':doctor-module'
+include ':patient-module'
