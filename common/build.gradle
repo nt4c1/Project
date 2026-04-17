@@ -1,0 +1,27 @@
+plugins {
+    id 'io.micronaut.library'
+    id 'com.google.protobuf'
+    id 'java'
+}
+
+dependencies {
+    api "io.grpc:grpc-stub:${rootProject.ext.grpcVersion}"
+    api "io.grpc:grpc-protobuf:${rootProject.ext.grpcVersion}"
+    api "com.google.protobuf:protobuf-java:3.25.8"
+}
+
+protobuf {
+    protoc { artifact = 'com.google.protobuf:protoc:3.25.8' }
+    plugins {
+        grpc { artifact = "io.grpc:protoc-gen-grpc-java:${rootProject.ext.grpcVersion}" }
+    }
+    generateProtoTasks {
+        all()*.plugins { grpc {} }
+    }
+}
+
+// Make generated sources visible to IDEs
+sourceSets.main.java.srcDirs += [
+    'build/generated/source/proto/main/grpc',
+    'build/generated/source/proto/main/java'
+]

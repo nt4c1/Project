@@ -1,0 +1,38 @@
+package com.health.doctor;
+
+import com.health.doctor.domain.model.Appointment;
+import com.health.doctor.domain.model.Doctor;
+import com.health.doctor.domain.model.DoctorSchedule;
+
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The public API surface of the doctor module.
+ *
+ * Why a dedicated interface instead of importing use cases directly?
+ *   Direct use-case imports couple patient to doctor internals. If you rename
+ *   AppointmentUseCaseImpl or split it, patient code breaks. This interface
+ *   is a stable contract — doctor internals can change freely behind it.
+ */
+public interface DoctorModuleApi {
+
+    // ── Doctor discovery ──────────────────────────────────────────────────────
+    List<Doctor> getNearbyDoctors(String locationText);
+    List<Doctor> getDoctorsByGeohash(String geohashPrefix);
+    Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId);
+
+    // ── Appointments (patient-initiated actions) ──────────────────────────────
+    UUID bookAppointment(UUID doctorId, UUID patientId,
+                         LocalDate date, LocalTime time,
+                         String reasonForVisit);
+
+    void cancelAppointment(UUID appointmentId, UUID patientId, UUID doctorId,
+                           LocalDate date, LocalTime time,
+                           String cancellationReason);
+
+    List<Appointment> getPatientAppointments(UUID patientId, LocalDate date);
+}

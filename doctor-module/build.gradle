@@ -1,0 +1,42 @@
+plugins {
+    id 'io.micronaut.library'
+    id 'java'
+}
+
+dependencies {
+    api platform("io.micronaut.platform:micronaut-parent:${rootProject.ext.micronautVersion}")
+    api project(':common')
+
+    // Micronaut HTTP client (for Photon)
+    implementation "io.micronaut:micronaut-http-client"
+
+    // Micronaut Serde (for JSON processing)
+    annotationProcessor "io.micronaut.serde:micronaut-serde-processor"
+    implementation      "io.micronaut.serde:micronaut-serde-jackson"
+
+    // Cassandra
+    implementation "io.micronaut.cassandra:micronaut-cassandra:6.7.0"
+    implementation "com.datastax.oss:java-driver-query-builder:${rootProject.ext.cassandraVersion}"
+
+    // gRPC server
+    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
+
+    // Auth
+    implementation "org.mindrot:jbcrypt:${rootProject.ext.jbcryptVersion}"
+    implementation "io.jsonwebtoken:jjwt-api:${rootProject.ext.jjwtVersion}"
+    runtimeOnly    "io.jsonwebtoken:jjwt-impl:${rootProject.ext.jjwtVersion}"
+    runtimeOnly    "io.jsonwebtoken:jjwt-jackson:${rootProject.ext.jjwtVersion}"
+
+    // Geohash
+    implementation "ch.hsr:geohash:${rootProject.ext.geohashVersion}"
+
+    // Micronaut
+    annotationProcessor "io.micronaut:micronaut-inject-java:${rootProject.ext.micronautVersion}"
+    implementation "io.micronaut:micronaut-inject:${rootProject.ext.micronautVersion}"
+    implementation "io.micronaut.cassandra:micronaut-cassandra:6.7.0"
+    implementation "io.micronaut.validation:micronaut-validation:4.12.0"
+}
+
+micronaut {
+    version "${rootProject.ext.micronautVersion}"
+}
