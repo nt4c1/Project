@@ -35,3 +35,8 @@ sourceSets.main.java.srcDirs += [
     'build/generated/source/proto/main/grpc',
     'build/generated/source/proto/main/java'
 ]
+
+// Ensure proto generation runs before compilation (some plugin orders require explicit wiring)
+tasks.named('compileJava') {
+    dependsOn tasks.withType(com.google.protobuf.gradle.GenerateProtoTask)
+}
