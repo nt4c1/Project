@@ -7,5 +7,5 @@ import java.util.UUID;
 
 public interface ScheduleRepositoryPort {
     void save(DoctorSchedule schedule);
-    Optional<DoctorSchedule> findByDoctorId(UUID doctorId);
+    Optional<DoctorSchedule> findByDoctorAndClinic(UUID doctorId, UUID clinicId);
 }

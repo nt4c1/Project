@@ -1,29 +1,36 @@
 syntax = "proto3";
 
+import "common.proto";
+
 option java_package = "com.health.grpc.auth";
 option java_outer_classname = "AuthProto";
 option java_multiple_files = true;
 
-service AuthGrpcService {
-  rpc Login           (LoginRequest)          returns (LoginResponse);
-  rpc ValidateToken   (ValidateTokenRequest)  returns (ValidateTokenResponse);
-  rpc RefreshToken    (RefreshTokenRequest)   returns (RefreshTokenResponse);
-  rpc Logout          (LogoutRequest)         returns (LogoutResponse);
-}
+// Shared messages for JWT-based Authentication
 
-message LoginRequest {
-  string username = 1;
+message TokenRequest {
+  string email    = 1;
   string password = 2;
-  string role     = 3;  // DOCTOR | PATIENT | ADMIN
 }
 
-message LoginResponse {
-  bool   success       = 1;
-  string access_token  = 2;
-  string refresh_token = 3;
-  string user_id       = 4;
-  string role          = 5;
-  string message       = 6;
+message TokenResponse {
+  bool          success       = 1;
+  string        access_token  = 2;
+  string        refresh_token = 3;
+  string        message       = 4;
+  
+  // Optional module-specific info
+  oneof user_info {
+    DoctorMessage  doctor  = 5;
+    PatientMessage patient = 6;
+  }
+}
+
+message PatientMessage {
+  string patient_id = 1;
+  string name       = 2;
+  string email      = 3;
+  string phone      = 4;
 }
 
 message ValidateTokenRequest {
@@ -35,23 +42,4 @@ message ValidateTokenResponse {
   string user_id = 2;
   string role    = 3;
   string message = 4;
-}
-
-message RefreshTokenRequest {
-  string refresh_token = 1;
-}
-
-message RefreshTokenResponse {
-  bool   success      = 1;
-  string access_token = 2;
-  string message      = 3;
-}
-
-message LogoutRequest {
-  string token = 1;
-}
-
-message LogoutResponse {
-  bool   success = 1;
-  string message = 2;
 }

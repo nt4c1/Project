@@ -2,32 +2,43 @@ package com.health.doctor.application.usecase.interfaces;
 
 import com.health.doctor.domain.model.Doctor;
 import com.health.doctor.domain.model.DoctorType;
+import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
-import com.health.grpc.doctor.DoctorLoginResponse;
-import com.health.grpc.doctor.TokenResponse;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 import java.util.UUID;
 
 public interface DoctorInterface {
 
-    UUID createDoctor(String name, UUID clinicId, DoctorType type,
-                      String specialization, String email, String password);
+    UUID createDoctor(@NotBlank String name,
+                      List<UUID> clinicIds,
+                      @NotNull DoctorType type,
+                      @NotBlank String specialization,
+                      @NotBlank @Email String email,
+                      @NotBlank @Size(min = 6) String password);
 
-    TokenResponse loginDoctor(String email, String password);
+    TokenResponse loginDoctor(@NotBlank @Email String email, @NotBlank String password);
 
-    ValidateTokenResponse validateDoctor(String token);
+    ValidateTokenResponse validateDoctor(@NotBlank String token);
 
-    List<Doctor> getDoctorsByClinic(UUID clinicId);
+    List<Doctor> getDoctorsByClinic(@NotNull UUID clinicId);
 
-    List<Doctor> getDoctorsByLocationText(String locationText);
+    List<Doctor> getDoctorsByLocationText(@NotBlank String locationText);
 
-    List<Doctor> getDoctorsByLocationGeohash(String geohashPrefix);
+    List<Doctor> getDoctorsByLocationGeohash(@NotBlank String geohashPrefix);
 
-    void updateDoctorLocation(UUID doctorId, String locationText);
+    void updateDoctorLocation(@NotNull UUID doctorId, @NotNull UUID clinicId, @NotBlank String locationText);
 
-    void updateDoctor(UUID doctorId, String email, String password);
+    void updateDoctor(@NotNull UUID doctorId,
+                      @NotBlank @Email String email,
+                      @NotBlank @Size(min = 6) String password);
 
-    void deleteDoctor(UUID doctorId, String email, String password);
+    void deleteDoctor(@NotNull UUID doctorId,
+                      @NotBlank @Email String email,
+                      @NotBlank @Size(min = 6) String password);
 
 }

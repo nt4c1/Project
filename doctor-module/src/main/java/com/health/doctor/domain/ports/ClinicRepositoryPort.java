@@ -15,4 +15,6 @@ public interface ClinicRepositoryPort {
     Location getLocation(UUID clinicId);
     Clinic findDoctorAndClinic(UUID doctorId);
     List<Clinic> findNearby(String geohash, double latitude, double longitude);
+    List<Clinic> searchByName(String name, int page, int size);
+    long countByName(String name);
 }

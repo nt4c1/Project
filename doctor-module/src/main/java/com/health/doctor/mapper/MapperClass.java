@@ -2,15 +2,16 @@ package com.health.doctor.mapper;
 
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.health.doctor.domain.model.*;
+import com.health.grpc.common.AppointmentMessage;
+import com.health.grpc.common.DoctorMessage;
 import com.health.grpc.doctor.AppointmentActionRequest;
-import com.health.grpc.doctor.AppointmentMessage;
-import com.health.grpc.doctor.DoctorMessage;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class MapperClass {
 
@@ -32,6 +33,25 @@ public class MapperClass {
         a.setPatientName(r.getString("patient_name"));
         a.setPatientPhone(r.getString("patient_phone"));
         a.setReasonForVisit(r.getString("reason_for_visit"));
+        a.setClinicId(r.getUuid("clinic_id"));
+        return a;
+    }
+
+    public static Appointment mapPatientRow(Row r) {
+        Appointment a = new Appointment(
+                r.getUuid("appointment_id"),
+                r.getUuid("doctor_id"),
+                r.getUuid("patient_id"),
+                r.getLocalDate("appointment_date"),
+                toLocalTime(r.getInstant("scheduled_time")),
+                AppointmentStatus.valueOf(r.getString("status")),
+                null, null
+        );
+        a.setDoctorName(r.getString("doctor_name"));
+        a.setClinicName(r.getString("clinic_name"));
+        a.setSpecialization(r.getString("specialization"));
+        a.setReasonForVisit(r.getString("reason_for_visit"));
+        a.setClinicId(r.getUuid("clinic_id"));
         return a;
     }
 
@@ -48,6 +68,7 @@ public class MapperClass {
         );
         a.setReasonForVisit(r.getString("reason_for_visit"));
         a.setCancellationReason(r.getString("cancellation_reason"));
+        a.setClinicId(r.getUuid("clinic_id"));
         return a;
     }
 
@@ -74,7 +95,7 @@ public class MapperClass {
         return new Doctor(
                 r.getUuid("doctor_id"),
                 r.getString("name"),
-                r.getUuid("clinic_id"),
+                r.getList("clinic_ids", UUID.class),
                 DoctorType.valueOf(r.getString("type")),
                 r.getString("specialization"),
                 r.getBoolean("is_active"),
@@ -88,7 +109,7 @@ public class MapperClass {
         return new Doctor(
                 r.getUuid("doctor_id"),
                 r.getString("name"),
-                r.getUuid("clinic_id"),
+                java.util.Collections.singletonList(r.getUuid("clinic_id")),
                 null,
                 r.getString("specialization"),
                 r.getBoolean("is_active")
@@ -102,11 +123,11 @@ public class MapperClass {
                 .setDoctorId(d.getId() != null ? d.getId().toString() : "")
                 .setName(d.getName() != null ? d.getName() : "")
                 .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
-                .setIsActive(d.isActive());
+                .setIsActive(d.isActive()) ;
         if (d.getType() != null)
-            b.setType(com.health.grpc.doctor.DoctorType.valueOf(d.getType().name()));
-        if (d.getClinicId() != null)
-            b.setClinicId(d.getClinicId().toString());
+            b.setType(com.health.grpc.common.DoctorType.valueOf(d.getType().name()));
+        if (d.getClinicIds() != null)
+            b.addAllClinicIds(d.getClinicIds().stream().map(UUID::toString).collect(java.util.stream.Collectors.toList()));
         return b.build();
     }
 
@@ -117,18 +138,19 @@ public class MapperClass {
                 .setPatientId(a.getPatientId().toString())
                 .setDate(a.getAppointmentDate().toString())
                 .setTime(a.getScheduleTime().toString())
-                .setStatus(com.health.grpc.doctor.AppointmentStatus.valueOf(a.getStatus().name()));
+                .setStatus(com.health.grpc.common.AppointmentStatus.valueOf(a.getStatus().name()));
         if (a.getPatientName()        != null) b.setPatientName(a.getPatientName());
         if (a.getPatientPhone()       != null) b.setPatientPhone(a.getPatientPhone());
         if (a.getDoctorName()         != null) b.setDoctorName(a.getDoctorName());
         if (a.getClinicName()         != null) b.setClinicName(a.getClinicName());
         if (a.getReasonForVisit()     != null) b.setReasonForVisit(a.getReasonForVisit());
         if (a.getCancellationReason() != null) b.setCancellationReason(a.getCancellationReason());
+        if (a.getClinicId()           != null) b.setClinicId(a.getClinicId().toString());
         return b.build();
     }
 
     public static Appointment toAppointment(AppointmentActionRequest r) {
-        return new Appointment(
+        Appointment a = new Appointment(
                 UUID.fromString(r.getAppointmentId()),
                 UUID.fromString(r.getDoctorId()),
                 UUID.fromString(r.getPatientId()),
@@ -138,6 +160,23 @@ public class MapperClass {
                 null,
                 null
         );
+        return a;
+    }
+
+    private DoctorMessage toDoctorMessage(Doctor doctor) {
+        return DoctorMessage.newBuilder()
+                .setDoctorId(doctor.getId().toString())
+                .setName(doctor.getName())
+                .setType(com.health.grpc.common.DoctorType.valueOf(doctor.getType() != null ? doctor.getType().name() : ""))
+                .setSpecialization(doctor.getSpecialization())
+                .setIsActive(doctor.isActive())
+                .addAllClinicIds(
+                        doctor.getClinicIds().stream()
+                                .map(UUID::toString)
+                                .collect(Collectors.toList())
+                )
+                .setDistance(doctor.getDistance())
+                .build();
     }
 
     // ── Time helpers ──────────────────────────────────────────────────────────

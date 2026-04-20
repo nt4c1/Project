@@ -88,4 +88,22 @@ public class ClinicUseCase implements ClinicInterface {
         return repo.findNearby(geohash, location.getLatitude(), location.getLongitude());
     }
 
+    @Override
+    public List<Clinic> searchClinics(String name, int page, int size) {
+        if (name == null || name.isBlank())
+            throw new InvalidArgumentException("Search name is required");
+        if (page < 0)
+            throw new InvalidArgumentException("Page must be >= 0");
+        if (size <= 0)
+            throw new InvalidArgumentException("Size must be > 0");
+        return repo.searchByName(name, page, size);
+    }
+
+    @Override
+    public long countClinicsByName(String name) {
+        if (name == null || name.isBlank())
+            throw new InvalidArgumentException("Search name is required");
+        return repo.countByName(name);
+    }
+
 }

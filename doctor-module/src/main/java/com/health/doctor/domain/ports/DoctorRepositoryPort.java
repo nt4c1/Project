@@ -12,7 +12,7 @@ public interface DoctorRepositoryPort {
 
     void save(Doctor doctor);
 
-    void updateLocation(UUID doctorId, Location location);
+    void updateLocation(UUID doctorId, UUID clinicId, Location location);
 
     Optional<Doctor> findById(UUID doctorId);
 
@@ -26,7 +26,7 @@ public interface DoctorRepositoryPort {
 
     void deleteDoctor(UUID doctorId, String email, String password);
 
-    UUID findClinicId(UUID doctorId);
+    List<UUID> findClinicIds(UUID doctorId);
 
     Optional<Doctor> findActive(UUID doctorId);
 

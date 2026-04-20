@@ -49,16 +49,16 @@ public class DoctorModuleApiImpl implements DoctorModuleApi {
     }
 
     @Override
-    public Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId) {
-        return scheduleUseCase.getSchedule(doctorId);
+    public Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId, UUID clinicId) {
+        return scheduleUseCase.getSchedule(doctorId, clinicId);
     }
 
     @Override
-    public UUID bookAppointment(UUID doctorId, UUID patientId,
+    public UUID bookAppointment(UUID doctorId, UUID patientId, UUID clinicId,
                                 LocalDate date, LocalTime time,
                                 String reasonForVisit) {
         return appointmentUseCase.createAppointment(
-                doctorId, patientId, date, time, reasonForVisit);
+                doctorId, patientId, clinicId, date, time, reasonForVisit);
     }
 
     @Override

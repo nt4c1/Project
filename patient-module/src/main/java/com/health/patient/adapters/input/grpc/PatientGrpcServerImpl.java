@@ -1,11 +1,19 @@
 package com.health.patient.adapters.input.grpc;
 
+import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.doctor.DoctorModuleApi;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.Doctor;
 import com.health.doctor.domain.model.DoctorSchedule;
+
+import com.health.grpc.auth.TokenRequest;
+import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenRequest;
 import com.health.grpc.auth.ValidateTokenResponse;
+import com.health.grpc.common.AppointmentMessage;
+import com.health.grpc.common.AppointmentStatus;
+import com.health.grpc.common.DoctorMessage;
+import com.health.grpc.common.DoctorType;
 import com.health.grpc.doctor.*;
 import com.health.grpc.patient.*;
 import com.health.patient.application.PatientInterface;
@@ -23,13 +31,17 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static com.health.common.auth.GrpcAuthInterceptor.ROLE_KEY;
+import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
+
 @Slf4j
 @Singleton
 @GrpcService
 public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcServiceImplBase {
 
     private final PatientInterface patientUseCase;
-    private final DoctorModuleApi  doctorModule;   // direct call — no network hop
+    private final DoctorModuleApi  doctorModule;
+    private static final UUID NIL_UUID = new UUID(0, 0);
 
     public PatientGrpcServerImpl(PatientInterface patientUseCase,
                                  DoctorModuleApi doctorModule) {
@@ -40,8 +52,8 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     // ── Auth ──────────────────────────────────────────────────────────────────
 
     @Override
-    public void patientLogin(PatientLoginRequest request,
-                             StreamObserver<PatientLoginResponse> observer) {
+    public void patientLogin(TokenRequest request,
+                             StreamObserver<TokenResponse> observer) {
         handle(observer, () ->
                 patientUseCase.loginPatient(request.getEmail(), request.getPassword())
         );
@@ -59,6 +71,10 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void registerPatient(RegisterPatientRequest request,
                                 StreamObserver<RegisterPatientResponse> observer) {
         handle(observer, () -> {
+            if (request.getName().isBlank()) throw new DomainException("Name is required", Status.INVALID_ARGUMENT);
+            if (request.getEmail().isBlank()) throw new DomainException("Email is required", Status.INVALID_ARGUMENT);
+            if (request.getPassword().length() < 6) throw new DomainException("Password must be at least 6 characters", Status.INVALID_ARGUMENT);
+            
             UUID id = patientUseCase.registerPatient(
                     request.getName(), request.getEmail(),
                     request.getPassword(), request.getPhone()
@@ -76,6 +92,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void getPatient(GetPatientRequest request,
                            StreamObserver<GetPatientResponse> observer) {
         handle(observer, () -> {
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
             ensureSelf(request.getPatientId());
             Patient p = patientUseCase.getPatient(UUID.fromString(request.getPatientId()))
                     .orElseThrow(() -> new DomainException("Patient not found", Status.NOT_FOUND));
@@ -89,12 +106,50 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     }
 
     @Override
+    public void updatePatient(UpdatePatientRequest request,
+                              StreamObserver<UpdatePatientResponse> observer) {
+        handle(observer, () -> {
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+            ensureSelf(request.getPatientId());
+            patientUseCase.updatePatient(
+                    UUID.fromString(request.getPatientId()),
+                    request.getEmail(),
+                    request.getPassword()
+            );
+            return UpdatePatientResponse.newBuilder()
+                    .setPatientId(request.getPatientId())
+                    .setMessage("Patient updated successfully")
+                    .build();
+        });
+    }
+
+    @Override
+    public void deletePatient(DeletePatientRequest request,
+                              StreamObserver<DeletePatientResponse> observer) {
+        handle(observer, () -> {
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+            ensureSelf(request.getPatientId());
+            patientUseCase.deletePatient(
+                    UUID.fromString(request.getPatientId()),
+                    request.getEmail(),
+                    request.getPassword()
+            );
+            return DeletePatientResponse.newBuilder()
+                    .setMessage("Patient deleted successfully")
+                    .build();
+        });
+    }
+
+    @Override
     public void patientExists(PatientExistsRequest request,
                               StreamObserver<PatientExistsResponse> observer) {
-        handle(observer, () -> PatientExistsResponse.newBuilder()
+        handle(observer, () -> {
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+            return PatientExistsResponse.newBuilder()
                 .setExists(patientUseCase.getPatient(
                         UUID.fromString(request.getPatientId())).isPresent())
-                .build());
+                .build();
+        });
     }
 
     // ── Doctor discovery (delegated to doctor module directly) ────────────────
@@ -102,27 +157,44 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     @Override
     public void getNearbyDoctors(NearbyDoctorsProxyRequest request,
                                  StreamObserver<NearbyDoctorsProxyResponse> observer) {
-        handle(observer, () -> NearbyDoctorsProxyResponse.newBuilder()
-                .addAllDoctors(doctorModule.getNearbyDoctors(request.getLocationText())
-                        .stream().map(this::mapDoctor).collect(Collectors.toList()))
-                .build());
+        handle(observer, () -> {
+            if (request.getLocationText().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
+            ensurePatient();
+            return NearbyDoctorsProxyResponse.newBuilder()
+                    .addAllDoctors(doctorModule.getNearbyDoctors(request.getLocationText())
+                            .stream().map(this::mapDoctor).collect(Collectors.toList()))
+                    .build();
+        });
     }
 
     @Override
     public void getDoctorsByLocation(ByLocationProxyRequest request,
                                      StreamObserver<ByLocationProxyResponse> observer) {
-        handle(observer, () -> ByLocationProxyResponse.newBuilder()
-                .addAllDoctors(doctorModule.getDoctorsByGeohash(request.getGeohashPrefix())
-                        .stream().map(this::mapDoctor).collect(Collectors.toList()))
-                .build());
+        handle(observer, () -> {
+            if (request.getGeohashPrefix().isBlank()) throw new DomainException("Geohash prefix is required", Status.INVALID_ARGUMENT);
+            ensurePatient();
+            return ByLocationProxyResponse.newBuilder()
+                    .addAllDoctors(doctorModule.getDoctorsByGeohash(request.getGeohashPrefix())
+                            .stream().map(this::mapDoctor).collect(Collectors.toList()))
+                    .build();
+        });
     }
 
     @Override
     public void getDoctorSchedule(ScheduleProxyRequest request,
                                   StreamObserver<ScheduleProxyResponse> observer) {
         handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+            ensurePatient();
+
+            UUID doctorId = UUID.fromString(request.getDoctorId());
+            UUID clinicId = NIL_UUID;
+            if (!request.getClinicId().isBlank()) {
+                clinicId = UUID.fromString(request.getClinicId());
+            }
+
             DoctorSchedule s = doctorModule
-                    .getDoctorSchedule(UUID.fromString(request.getDoctorId()))
+                    .getDoctorSchedule(doctorId, clinicId)
                     .orElseThrow(() -> new DomainException("Schedule not found", Status.NOT_FOUND));
             return ScheduleProxyResponse.newBuilder()
                     .addAllWorkingDays(s.getWorkingDays().stream()
@@ -141,10 +213,23 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void bookAppointment(BookAppointmentRequest request,
                                 StreamObserver<BookAppointmentResponse> observer) {
         handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+            if (request.getDate().isBlank()) throw new DomainException("Date is required", Status.INVALID_ARGUMENT);
+            if (request.getTime().isBlank()) throw new DomainException("Time is required", Status.INVALID_ARGUMENT);
+
             ensureSelf(request.getPatientId());
+
+            UUID doctorId = UUID.fromString(request.getDoctorId());
+            UUID clinicId = NIL_UUID;
+            if (!request.getClinicId().isBlank()) {
+                clinicId = UUID.fromString(request.getClinicId());
+            }
+
             UUID id = doctorModule.bookAppointment(
-                    UUID.fromString(request.getDoctorId()),
+                    doctorId,
                     UUID.fromString(request.getPatientId()),
+                    clinicId,
                     LocalDate.parse(request.getDate()),
                     LocalTime.parse(request.getTime()),
                     request.getReasonForVisit()
@@ -161,6 +246,9 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void cancelAppointment(CancelAppointmentRequest request,
                                   StreamObserver<CancelAppointmentResponse> observer) {
         handle(observer, () -> {
+            if (request.getAppointmentId().isBlank()) throw new DomainException("Appointment ID is required", Status.INVALID_ARGUMENT);
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+            
             ensureSelf(request.getPatientId());
             doctorModule.cancelAppointment(
                     UUID.fromString(request.getAppointmentId()),
@@ -179,6 +267,9 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     public void getMyAppointments(MyAppointmentsRequest request,
                                   StreamObserver<MyAppointmentsResponse> observer) {
         handle(observer, () -> {
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+            if (request.getDate().isBlank()) throw new DomainException("Date is required", Status.INVALID_ARGUMENT);
+
             ensureSelf(request.getPatientId());
             return MyAppointmentsResponse.newBuilder()
                     .addAllAppointments(
@@ -193,25 +284,25 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
 
     // ── Mappers ───────────────────────────────────────────────────────────────
 
-    private DoctorInfo mapDoctor(Doctor d) {
-        DoctorInfo.Builder b = DoctorInfo.newBuilder()
+    private DoctorMessage mapDoctor(Doctor d) {
+        DoctorMessage.Builder b = DoctorMessage.newBuilder()
                 .setDoctorId(d.getId().toString())
                 .setName(d.getName() != null ? d.getName() : "")
                 .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
                 .setIsActive(d.isActive());
         if (d.getType() != null)
-            b.setType(DoctorInfo.Type.valueOf(d.getType().name()));
+            b.setType(DoctorType.valueOf(d.getType().name()));
         return b.build();
     }
 
-    private AppointmentInfo mapAppointment(Appointment a) {
-        AppointmentInfo.Builder b = AppointmentInfo.newBuilder()
+    private AppointmentMessage mapAppointment(Appointment a) {
+        AppointmentMessage.Builder b = AppointmentMessage.newBuilder()
                 .setAppointmentId(a.getId().toString())
                 .setDoctorId(a.getDoctorId().toString())
                 .setPatientId(a.getPatientId().toString())
                 .setDate(a.getAppointmentDate().toString())
                 .setTime(a.getScheduleTime().toString())
-                .setStatus(AppointmentInfo.Status.valueOf(a.getStatus().name()));
+                .setStatus(AppointmentStatus.valueOf(a.getStatus().name()));
         if (a.getDoctorName()         != null) b.setDoctorName(a.getDoctorName());
         if (a.getClinicName()         != null) b.setClinicName(a.getClinicName());
         if (a.getReasonForVisit()     != null) b.setReasonForVisit(a.getReasonForVisit());
@@ -221,8 +312,15 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private void ensurePatient() {
+        String role = ROLE_KEY.get();
+        if (role == null || !role.equalsIgnoreCase("Patient"))
+            throw new SecurityException("Access denied: Patients only.");
+    }
+
     private void ensureSelf(String requestedId) {
-        String authId = AuthInterceptor.USER_ID_KEY.get();
+        ensurePatient();
+        String authId = USER_ID_KEY.get();
         if (authId == null || !authId.equals(requestedId))
             throw new SecurityException("Access denied: you can only access your own data.");
     }

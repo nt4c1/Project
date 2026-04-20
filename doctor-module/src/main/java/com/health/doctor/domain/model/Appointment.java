@@ -27,6 +27,7 @@ public class Appointment {
     private String specialization;
     private String reasonForVisit;
     private String cancellationReason;
+    private UUID clinicId;
 
     public Appointment(UUID id, UUID doctorId, UUID patientId,
                        LocalDate appointmentDate, LocalTime scheduleTime,
@@ -34,7 +35,7 @@ public class Appointment {
                        Instant createdAt, Instant updatedAt,
                        String patientName, String patientPhone,
                        String doctorName, String clinicName, String specialization,
-                       String reasonForVisit, String cancellationReason) {
+                       String reasonForVisit, String cancellationReason, UUID clinicId) {
         this.id = id;
         this.doctorId = doctorId;
         this.patientId = patientId;
@@ -50,6 +51,7 @@ public class Appointment {
         this.specialization = specialization;
         this.reasonForVisit = reasonForVisit;
         this.cancellationReason = cancellationReason;
+        this.clinicId = clinicId;
     }
 
     public Appointment(UUID id, UUID doctorId, UUID patientId,

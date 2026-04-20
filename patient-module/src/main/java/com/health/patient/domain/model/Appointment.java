@@ -22,6 +22,7 @@ public class Appointment {
     private String specialization;
     private String reasonForVisit;
     private String cancellationReason;
+    private UUID clinicId;
 
     public Appointment(UUID id, UUID doctorId, UUID patientId,
                        LocalDate date, LocalTime time, String status) {
@@ -36,12 +37,13 @@ public class Appointment {
     public Appointment(UUID id, UUID doctorId, UUID patientId,
                        LocalDate date, LocalTime time, String status,
                        String doctorName, String clinicName, String specialization,
-                       String reasonForVisit, String cancellationReason) {
+                       String reasonForVisit, String cancellationReason, UUID clinicId) {
         this(id, doctorId, patientId, date, time, status);
         this.doctorName         = doctorName;
         this.clinicName         = clinicName;
         this.specialization     = specialization;
         this.reasonForVisit     = reasonForVisit;
         this.cancellationReason = cancellationReason;
+        this.clinicId           = clinicId;
     }
 }

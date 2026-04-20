@@ -16,6 +16,8 @@ import static com.health.doctor.mapper.MapperClass.*;
 @Singleton
 public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
 
+    public static final UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     private final CqlSession           session;
     private final DoctorRepositoryPort doctorRepo;
     private final ClinicRepositoryPort clinicRepo;
@@ -54,44 +56,57 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
             doctorRepo.findById(a.getDoctorId()).ifPresent(d -> {
                 a.setDoctorName(d.getName());
                 a.setSpecialization(d.getSpecialization());
-                if (d.getClinicId() != null && a.getClinicName() == null) {
-                    var clinic = clinicRepo.findById(d.getClinicId());
+                if (d.getClinicIds() != null && !d.getClinicIds().isEmpty()) {
+                    // If clinicId not set or is NO_CLINIC_ID, default to first clinic
+                    if (a.getClinicId() == null || NO_CLINIC_ID.equals(a.getClinicId())) {
+                        a.setClinicId(d.getClinicIds().get(0));
+                    }
+                } else if (a.getClinicId() == null) {
+                    a.setClinicId(NO_CLINIC_ID);
+                }
+
+                if (a.getClinicId() != null && !NO_CLINIC_ID.equals(a.getClinicId())) {
+                    var clinic = clinicRepo.findById(a.getClinicId());
                     if (clinic != null) a.setClinicName(clinic.getName());
                 }
             });
+        }
+        
+        if (a.getClinicId() == null) {
+            a.setClinicId(NO_CLINIC_ID);
         }
 
         BatchStatement batch = BatchStatement.newInstance(DefaultBatchType.LOGGED)
                 .add(SimpleStatement.newInstance(
                         "INSERT INTO doctor_service.appointments_by_id " +
-                                "(appointment_id, doctor_id, patient_id, appointment_date, " +
+                                "(appointment_id, doctor_id, patient_id, clinic_id, appointment_date, " +
                                 " scheduled_time, status, reason_for_visit, " +
-                                " cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                        a.getId(), a.getDoctorId(), a.getPatientId(),
+                                " cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        a.getId(), a.getDoctorId(), a.getPatientId(), a.getClinicId(),
                         a.getAppointmentDate(), scheduledInstant,
                         a.getStatus().name(), a.getReasonForVisit(), null, now, now))
                 .add(SimpleStatement.newInstance(
                         "INSERT INTO doctor_service.appointments_by_doctor " +
                                 "(doctor_id, appointment_date, scheduled_time, appointment_id, " +
-                                " patient_id, patient_name, patient_phone, status, " +
-                                " reason_for_visit, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                                " patient_id, clinic_id, patient_name, patient_phone, status, " +
+                                " reason_for_visit, doctor_notes, cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
-                        a.getId(), a.getPatientId(), a.getPatientName(), a.getPatientPhone(),
-                        a.getStatus().name(), a.getReasonForVisit(), now, now))
+                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
+                        a.getStatus().name(), a.getReasonForVisit(), null, null, now, now))
                 .add(SimpleStatement.newInstance(
                         "INSERT INTO doctor_service.appointments_by_doctor_status " +
                                 "(doctor_id, status, appointment_date, scheduled_time, " +
-                                " appointment_id, patient_id, patient_name) VALUES (?,?,?,?,?,?,?)",
+                                " appointment_id, patient_id, clinic_id, patient_name, patient_phone, reason_for_visit) VALUES (?,?,?,?,?,?,?,?,?,?)",
                         a.getDoctorId(), a.getStatus().name(), a.getAppointmentDate(), scheduledInstant,
-                        a.getId(), a.getPatientId(), a.getPatientName()))
+                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit()))
                 .add(SimpleStatement.newInstance(
                         "INSERT INTO doctor_service.appointments_by_patient " +
                                 "(patient_id, appointment_date, scheduled_time, appointment_id, " +
-                                " doctor_id, doctor_name, clinic_name, specialization, " +
-                                " status, reason_for_visit) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                " doctor_id, clinic_id, doctor_name, clinic_name, specialization, " +
+                                " status, reason_for_visit, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                         a.getPatientId(), a.getAppointmentDate(), scheduledInstant,
-                        a.getId(), a.getDoctorId(), a.getDoctorName(), a.getClinicName(),
-                        a.getSpecialization(), a.getStatus().name(), a.getReasonForVisit()));
+                        a.getId(), a.getDoctorId(), a.getClinicId(), a.getDoctorName(), a.getClinicName(),
+                        a.getSpecialization(), a.getStatus().name(), a.getReasonForVisit(), null));
 
         session.execute(batch);
         try {
@@ -112,15 +127,15 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 doctorId
         ).one();
         assert r1 != null;
-        UUID clinicId = r1.getUuid("clinic_id");
+        List<UUID> clinicIds = r1.getList("clinic_ids", UUID.class);
         String doctorName = r1.getString("name");
         String specialization = r1.getString("specialization");
 
         String clinicName = null;
-        if (clinicId != null) {
+        if (clinicIds != null && !clinicIds.isEmpty()) {
             Row r2 = session.execute(
                     "SELECT name FROM doctor_service.clinics WHERE clinic_id=?",
-                    clinicId
+                    clinicIds.get(0)
             ).one();
             if (r2 != null) clinicName = r2.getString("name");
         }
@@ -131,6 +146,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
             a.setDoctorName(doctorName);
             a.setClinicName(clinicName);
             a.setSpecialization(specialization);
+            if (a.getClinicId() == null) a.setClinicId(NO_CLINIC_ID);
             list.add(a);
         }
 
@@ -151,6 +167,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                     toLocalTime(r.getInstant("scheduled_time")),
                     AppointmentStatus.valueOf(status), null, null);
             a.setPatientName(r.getString("patient_name"));
+            UUID cid = r.getUuid("clinic_id");
+            a.setClinicId(cid != null ? cid : NO_CLINIC_ID);
             list.add(a);
         }
         return list;
@@ -177,6 +195,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
             a.setClinicName(r.getString("clinic_name"));
             a.setSpecialization(r.getString("specialization"));
             a.setReasonForVisit(r.getString("reason_for_visit"));
+            UUID cid = r.getUuid("clinic_id");
+            a.setClinicId(cid != null ? cid : NO_CLINIC_ID);
             list.add(a);
         }
         return list;
@@ -186,13 +206,18 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     public Optional<Appointment> findById(UUID id) {
         Row r = session.execute(
                 "SELECT * FROM doctor_service.appointments_by_id WHERE appointment_id=?", id).one();
-        return Optional.ofNullable(r).map(MapperClass::mapIdRow);
+        return Optional.ofNullable(r).map(row -> {
+            Appointment a = MapperClass.mapIdRow(row);
+            if (a.getClinicId() == null) a.setClinicId(NO_CLINIC_ID);
+            return a;
+        });
     }
 
     @Override
     public void updateStatus(Appointment a, String newStatus) {
         Instant now              = Instant.now();
         Instant scheduledInstant = toInstant(a.getAppointmentDate(), a.getScheduleTime());
+        UUID clinicId = a.getClinicId() != null ? a.getClinicId() : NO_CLINIC_ID;
 
         session.execute(
                 "UPDATE doctor_service.appointments_by_id SET status=?, updated_at=? WHERE appointment_id=?",
@@ -209,10 +234,10 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 a.getAppointmentDate(), scheduledInstant, a.getId());
         session.execute(
                 "INSERT INTO doctor_service.appointments_by_doctor_status " +
-                        "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id, patient_name) " +
-                        "VALUES (?,?,?,?,?,?,?)",
+                        "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id, clinic_id, patient_name, patient_phone, reason_for_visit) " +
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 a.getDoctorId(), newStatus, a.getAppointmentDate(), scheduledInstant,
-                a.getId(), a.getPatientId(), a.getPatientName());
+                a.getId(), a.getPatientId(), clinicId, a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit());
         session.execute(
                 "UPDATE doctor_service.appointments_by_patient SET status=? " +
                         "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
@@ -232,22 +257,24 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
 
         // Load current status so we delete the right partition
         Row current = session.execute(
-                "SELECT status FROM doctor_service.appointments_by_id WHERE appointment_id=?",
+                "SELECT status, clinic_id FROM doctor_service.appointments_by_id WHERE appointment_id=?",
                 appointmentId).one();
         String currentStatus = current != null ? current.getString("status") : "PENDING";
+        UUID clinicId = current != null ? current.getUuid("clinic_id") : NO_CLINIC_ID;
+        if (clinicId == null) clinicId = NO_CLINIC_ID;
 
         session.execute(
                 "UPDATE doctor_service.appointments_by_id " +
                         "SET status='CANCELLED', cancellation_reason=?, updated_at=? WHERE appointment_id=?",
                 cancellationReason, now, appointmentId);
         session.execute(
-                "UPDATE doctor_service.appointments_by_doctor SET status='CANCELLED', updated_at=? " +
+                "UPDATE doctor_service.appointments_by_doctor SET status='CANCELLED', cancellation_reason=?, updated_at=? " +
                         "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
-                now, doctorId, date, scheduledInstant, appointmentId);
+                cancellationReason, now, doctorId, date, scheduledInstant, appointmentId);
         session.execute(
-                "UPDATE doctor_service.appointments_by_patient SET status='CANCELLED' " +
+                "UPDATE doctor_service.appointments_by_patient SET status='CANCELLED', cancellation_reason=? " +
                         "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?",
-                patientId, date, scheduledInstant, appointmentId);
+                cancellationReason, patientId, date, scheduledInstant, appointmentId);
         // FIX: use actual currentStatus, not hard-coded 'PENDING'
         session.execute(
                 "DELETE FROM doctor_service.appointments_by_doctor_status " +
@@ -255,9 +282,9 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 doctorId, currentStatus, date, scheduledInstant, appointmentId);
         session.execute(
                 "INSERT INTO doctor_service.appointments_by_doctor_status " +
-                        "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id) " +
-                        "VALUES (?,?,?,?,?,?)",
-                doctorId, "CANCELLED", date, scheduledInstant, appointmentId, patientId);
+                        "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id, clinic_id) " +
+                        "VALUES (?,?,?,?,?,?,?)",
+                doctorId, "CANCELLED", date, scheduledInstant, appointmentId, patientId, clinicId);
         decrementCount(doctorId, date);
     }
 
@@ -279,7 +306,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         //patient name + patient phone
         if (a.getPatientName() == null || a.getPatientPhone() == null) {
             Row doctorRow = session.execute(
-                    "SELECT patient_name, patient_phone " +
+                    "SELECT patient_name, patient_phone, clinic_id " +
                             "FROM doctor_service.appointments_by_doctor " +
                             "WHERE doctor_id=? AND appointment_date=? " +
                             "  AND scheduled_time=? AND appointment_id=?",
@@ -288,6 +315,10 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
             if (doctorRow != null) {
                 a.setPatientName(doctorRow.getString("patient_name"));
                 a.setPatientPhone(doctorRow.getString("patient_phone"));
+                if (a.getClinicId() == null || NO_CLINIC_ID.equals(a.getClinicId())) {
+                    UUID cid = doctorRow.getUuid("clinic_id");
+                    a.setClinicId(cid != null ? cid : NO_CLINIC_ID);
+                }
             }
             // Fallback: look up patient if row already gone
             if (a.getPatientName() == null) {
@@ -301,7 +332,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         //doctor name + clinic name
         if (a.getDoctorName() == null || a.getClinicName() == null) {
             Row patientRow = session.execute(
-                    "SELECT doctor_name, clinic_name, specialization " +
+                    "SELECT doctor_name, clinic_name, specialization, clinic_id " +
                             "FROM doctor_service.appointments_by_patient " +
                             "WHERE patient_id=? AND appointment_date=? " +
                             "  AND scheduled_time=? AND appointment_id=?",
@@ -311,21 +342,28 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 a.setDoctorName(patientRow.getString("doctor_name"));
                 a.setClinicName(patientRow.getString("clinic_name"));
                 a.setSpecialization(patientRow.getString("specialization"));
+                if (a.getClinicId() == null || NO_CLINIC_ID.equals(a.getClinicId())) {
+                    UUID cid = patientRow.getUuid("clinic_id");
+                    a.setClinicId(cid != null ? cid : NO_CLINIC_ID);
+                }
             }
             // Fallback: resolve from doctor + clinic tables
             if (a.getDoctorName() == null) {
                 doctorRepo.findById(a.getDoctorId()).ifPresent(d -> {
                     a.setDoctorName(d.getName());
                     a.setSpecialization(d.getSpecialization());
-                    if (d.getClinicId() != null && a.getClinicName() == null) {
-                        var clinic = clinicRepo.findById(d.getClinicId());
+                    if (d.getClinicIds() != null && !d.getClinicIds().isEmpty()) {
+                        if (a.getClinicId() == null || NO_CLINIC_ID.equals(a.getClinicId())) {
+                            a.setClinicId(d.getClinicIds().get(0));
+                        }
+                        var clinic = clinicRepo.findById(a.getClinicId());
                         if (clinic != null) a.setClinicName(clinic.getName());
                     }
                 });
             }
         }
         
-        
+        if (a.getClinicId() == null) a.setClinicId(NO_CLINIC_ID);
 
         // appointments_by_id — PK is appointment_id
         session.execute(
@@ -341,13 +379,14 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         session.execute(
                 "INSERT INTO doctor_service.appointments_by_doctor " +
                         "(doctor_id, appointment_date, scheduled_time, appointment_id, " +
-                        " patient_id, patient_name, patient_phone, status, " +
-                        " reason_for_visit, created_at, updated_at) " +
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        " patient_id, clinic_id, patient_name, patient_phone, status, " +
+                        " reason_for_visit, doctor_notes, cancellation_reason, created_at, updated_at) " +
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 a.getDoctorId(), a.getAppointmentDate(), newInstant,
-                a.getId(), a.getPatientId(),
+                a.getId(), a.getPatientId(), a.getClinicId(),
                 a.getPatientName(), a.getPatientPhone(),    
                 newStatus, a.getReasonForVisit(),
+                null, null,
                 a.getCreatedAt(), now);
 
         // a.getStatus() is the CURRENT (old) status — correctly set because
@@ -358,10 +397,10 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 a.getDoctorId(), a.getStatus().name(), oldDate, oldInstant, a.getId());
         session.execute(
                 "INSERT INTO doctor_service.appointments_by_doctor_status " +
-                        "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id, patient_name) " +
-                        "VALUES (?,?,?,?,?,?,?)",
+                        "(doctor_id, status, appointment_date, scheduled_time, appointment_id, patient_id, clinic_id, patient_name, patient_phone, reason_for_visit) " +
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 a.getDoctorId(), newStatus, a.getAppointmentDate(), newInstant,
-                a.getId(), a.getPatientId(), a.getPatientName());
+                a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit());
 
         // appointments_by_patient — partition includes date, must delete + reinsert
         session.execute(
@@ -371,10 +410,10 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         session.execute(
                 "INSERT INTO doctor_service.appointments_by_patient " +
                         "(patient_id, appointment_date, scheduled_time, appointment_id, " +
-                        " doctor_id, doctor_name, clinic_name, specialization, status, reason_for_visit) " +
-                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                a.getPatientId(), a.getAppointmentDate(), newInstant, a.getId(), a.getDoctorId(),
+                        " doctor_id, clinic_id, doctor_name, clinic_name, specialization, status, reason_for_visit, cancellation_reason) " +
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                a.getPatientId(), a.getAppointmentDate(), newInstant, a.getId(), a.getDoctorId(), a.getClinicId(),
                 a.getDoctorName(), a.getClinicName(), a.getSpecialization(),
-                newStatus, a.getReasonForVisit());
+                newStatus, a.getReasonForVisit(), null);
     }
 }

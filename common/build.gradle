@@ -8,6 +8,16 @@ dependencies {
     api "io.grpc:grpc-stub:${rootProject.ext.grpcVersion}"
     api "io.grpc:grpc-protobuf:${rootProject.ext.grpcVersion}"
     api "com.google.protobuf:protobuf-java:3.25.8"
+
+    // Auth dependencies moved to common
+    api "org.mindrot:jbcrypt:${rootProject.ext.jbcryptVersion}"
+    api "io.jsonwebtoken:jjwt-api:${rootProject.ext.jjwtVersion}"
+    runtimeOnly "io.jsonwebtoken:jjwt-impl:${rootProject.ext.jjwtVersion}"
+    runtimeOnly "io.jsonwebtoken:jjwt-jackson:${rootProject.ext.jjwtVersion}"
+    
+    // For @Singleton and @Value
+    api "jakarta.inject:jakarta.inject-api:2.0.1"
+    implementation "io.micronaut:micronaut-inject:${rootProject.ext.micronautVersion}"
 }
 
 protobuf {

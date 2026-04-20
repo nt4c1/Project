@@ -12,4 +12,6 @@ public interface ClinicInterface {
     Clinic getClinicById(UUID clinicId);
     List<Clinic> findByName(String name);
     List<Clinic> getNearbyClinicsByLocationText(String locationText);
+    List<Clinic> searchClinics(String name, int page, int size);
+    long countClinicsByName(String name);
 }

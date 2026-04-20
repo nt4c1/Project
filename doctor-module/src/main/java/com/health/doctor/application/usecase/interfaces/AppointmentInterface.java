@@ -1,6 +1,9 @@
 package com.health.doctor.application.usecase.interfaces;
 
 import com.health.doctor.domain.model.Appointment;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -9,19 +12,25 @@ import java.util.UUID;
 
 public interface AppointmentInterface {
 
-    UUID createAppointment(UUID doctorId, UUID patientId,
-                           LocalDate date, LocalTime time,
-                           String reasonForVisit);
+    UUID createAppointment(@NotNull UUID doctorId,
+                           @NotNull UUID patientId,
+                           @NotNull UUID clinicId,
+                           @NotNull @FutureOrPresent LocalDate date,
+                           @NotNull LocalTime time,
+                           @NotBlank String reasonForVisit);
 
-    void acceptAppointment(Appointment appointment);
+    void acceptAppointment(@NotNull Appointment appointment);
 
-    void cancelAppointment(UUID appointmentId, UUID patientId, UUID doctorId,
-                           LocalDate date, LocalTime time,
-                           String cancellationReason);
+    void cancelAppointment(@NotNull UUID appointmentId,
+                           @NotNull UUID patientId,
+                           @NotNull UUID doctorId,
+                           @NotNull LocalDate date,
+                           @NotNull LocalTime time,
+                           @NotBlank String cancellationReason);
 
-    void postponeAppointment(Appointment appointment);
+    void postponeAppointment(@NotNull Appointment appointment);
 
-    List<Appointment> getAppointment(UUID doctorId, LocalDate date);
+    List<Appointment> getAppointment(@NotNull UUID doctorId, @NotNull LocalDate date);
 
-    List<Appointment> pendingAppointment(UUID doctorId, LocalDate date);
+    List<Appointment> pendingAppointment(@NotNull UUID doctorId, @NotNull LocalDate date);
 }

@@ -13,9 +13,9 @@ public interface PatientNatsClient {
     void sendPatientUpdated(String patientId);
 
     @Subject("appointment.created")
-    void sendAppointmnetCreated(String appointmentId);
+    void sendAppointmentCreated(String appointmentId);
 
     @Subject("appointment.updated")
-    void sendAppointmnetUpdated(String appointmentId);
+    void sendAppointmentUpdated(String appointmentId);
 
 }

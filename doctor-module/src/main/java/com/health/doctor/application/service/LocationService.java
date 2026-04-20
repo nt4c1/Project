@@ -52,7 +52,7 @@ public class LocationService {
         double lat = firstFeature.getGeometry().getCoordinates().get(1);
         log.info("Coordinates found: lat={}, lng={}", lat, lng);
 
-        String geohash = GeoHashUtil.generate(lat, lng, 5);
+        String geohash = GeoHashUtil.generate(lat, lng, 6);
         log.info("Generated geohash: {}", geohash);
 
         PhotonResponse.Properties props = firstFeature.getProperties();

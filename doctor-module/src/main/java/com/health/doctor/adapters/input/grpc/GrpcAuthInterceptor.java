@@ -2,7 +2,9 @@ package com.health.doctor.adapters.input.grpc;
 
 
 
-import com.health.doctor.infrastructure.JwtProvider;
+import com.health.common.auth.JwtProvider;
+import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
+import static com.health.common.auth.GrpcAuthInterceptor.ROLE_KEY;
 import io.grpc.*;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -10,9 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Singleton
 public class GrpcAuthInterceptor implements ServerInterceptor {
-
-    public static final Context.Key<String> USER_ID_KEY = Context.key("userId");
-    public static final Context.Key<String> USER_ROLE_KEY = Context.key("userRole");
 
     private final JwtProvider jwtProvider;
 
@@ -33,13 +32,13 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
             return next.startCall(call, headers);
         }
 
-        if (methodName.endsWith("DoctorLogin") ||
+        if (methodName.endsWith("GenerateToken") ||
                 methodName.endsWith("CreateDoctor") ||
                 methodName.endsWith("ValidateDoctorToken") ||
                 methodName.endsWith("GetNearbyDoctors") ||
                 methodName.endsWith("GetDoctorsByLocation") ||
                 methodName.endsWith("GetDoctorSchedule") ||
-                methodName.endsWith("DoctorExists") ||
+                methodName.endsWith("DoctorActive") ||
                 methodName.endsWith("GetDoctorsByClinic")) {
             return next.startCall(call, headers);
         }
@@ -66,7 +65,7 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
 
             Context context = Context.current()
                     .withValue(USER_ID_KEY, userId)
-                    .withValue(USER_ROLE_KEY, role);
+                    .withValue(ROLE_KEY, role);
 
             return Contexts.interceptCall(context, call, headers, next);
 

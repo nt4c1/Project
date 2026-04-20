@@ -28,8 +28,8 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
     public void save(Clinic c) {
         Location l   = c.getLocation();
         Instant  now = Instant.now();
-        String   prefix = l.getGeohash() != null && l.getGeohash().length() >= 5
-                ? l.getGeohash().substring(0, 5)
+        String   prefix = l.getGeohash() != null && l.getGeohash().length() >= 6
+                ? l.getGeohash().substring(0, 6)
                 : l.getGeohash();
 
         // clinics — canonical row
@@ -47,18 +47,18 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
         // clinics_by_geohash — replaces secondary index on geohash
         session.execute(
                 "INSERT INTO doctor_service.clinics_by_geohash " +
-                        "(geohash, clinic_id, name, latitude, longitude, is_active) " +
-                        "VALUES (?,?,?,?,?,?)",
+                        "(geohash, clinic_id, name, latitude, longitude, is_active, is_deleted) " +
+                        "VALUES (?,?,?,?,?,?,?)",
                 prefix, c.getId(), c.getName(),
-                l.getLatitude(), l.getLongitude(), c.isActive()
+                l.getLatitude(), l.getLongitude(), c.isActive(), false
         );
 
         // clinics_by_location_text — replaces secondary index on location_text
         session.execute(
                 "INSERT INTO doctor_service.clinics_by_location_text " +
-                        "(location_text, clinic_id, name, is_active) " +
-                        "VALUES (?,?,?,?)",
-                l.getLocationText(), c.getId(), c.getName(), c.isActive()
+                        "(location_text, clinic_id, name, is_active, is_deleted) " +
+                        "VALUES (?,?,?,?,?)",
+                l.getLocationText(), c.getId(), c.getName(), c.isActive(), false
         );
     }
 
@@ -94,7 +94,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     @Override
     public Clinic findByLocationGeohash(String geohash) {
-        String prefix = geohash.length() >= 5 ? geohash.substring(0, 5) : geohash;
+        String prefix = geohash.length() >= 6 ? geohash.substring(0, 6) : geohash;
         // Use lookup table — O(1) partition read
         Row lookup = session.execute(
                 "SELECT clinic_id FROM doctor_service.clinics_by_geohash " +
@@ -133,21 +133,31 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     @Override
     public List<Clinic> findNearby(String geohash, double lat, double lon) {
-        GeoHash center    = GeoHash.fromGeohashString(geohash);
+        // Zoom out strategy for clinics
+        for (int precision = 6; precision >= 4; precision--) {
+            String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
+            List<Clinic> found = searchClinicsInPrefix(prefix, lat, lon);
+            if (!found.isEmpty()) return found;
+        }
+        return Collections.emptyList();
+    }
+
+    private List<Clinic> searchClinicsInPrefix(String prefix, double lat, double lon) {
+        GeoHash center    = GeoHash.fromGeohashString(prefix);
         GeoHash[] neighbors = center.getAdjacent();
 
         Set<String> prefixes = new HashSet<>();
-        prefixes.add(center.toBase32().substring(0, 5));
-        for (GeoHash n : neighbors) prefixes.add(n.toBase32().substring(0, 5));
+        prefixes.add(prefix);
+        for (GeoHash n : neighbors) prefixes.add(n.toBase32().substring(0, prefix.length()));
 
         record ClinicWithDistance(Clinic clinic, double distanceKm) {}
         List<ClinicWithDistance> candidates = new ArrayList<>();
 
-        for (String prefix : prefixes) {
+        for (String p : prefixes) {
             ResultSet rs = session.execute(
                     "SELECT clinic_id, name, latitude, longitude, is_active " +
                             "FROM doctor_service.clinics_by_geohash WHERE geohash=?",
-                    prefix
+                    p
             );
             for (Row r : rs) {
                 double cLat = r.getDouble("latitude");
@@ -163,6 +173,33 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
         candidates.sort(Comparator.comparingDouble(ClinicWithDistance::distanceKm));
         return candidates.stream().map(ClinicWithDistance::clinic).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Clinic> searchByName(String name, int page, int size) {
+        String query = "SELECT * FROM doctor_service.clinics WHERE name LIKE ? ALLOW FILTERING";
+
+        ResultSet rs = session.execute(
+                "SELECT * FROM doctor_service.clinics WHERE is_deleted=false ALLOW FILTERING"
+        );
+        
+        return rs.all().stream()
+                .map(com.health.doctor.mapper.MapperClass::mapRowToClinic)
+                .filter(c -> c.getName().toLowerCase().contains(name.toLowerCase()))
+                .skip((long) page * size)
+                .limit(size)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public long countByName(String name) {
+        ResultSet rs = session.execute(
+                "SELECT * FROM doctor_service.clinics WHERE is_deleted=false ALLOW FILTERING"
+        );
+        return rs.all().stream()
+                .map(com.health.doctor.mapper.MapperClass::mapRowToClinic)
+                .filter(c -> c.getName().toLowerCase().contains(name.toLowerCase()))
+                .count();
     }
 
     private double haversineKm(double lat1, double lon1, double lat2, double lon2) {

@@ -6,6 +6,10 @@ import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import jakarta.inject.Singleton;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import io.micronaut.validation.Validated;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
@@ -16,6 +20,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Singleton
+@Validated
 public class ScheduleUseCase implements ScheduleInterface {
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
 
@@ -29,32 +34,26 @@ public class ScheduleUseCase implements ScheduleInterface {
     }
 
     @Override
-    public void createSchedule(UUID doctorId, Set<String> workingDays, LocalTime startTime, LocalTime endTime, int slotDuration, int maxPerDay) {
+    public void createSchedule(@NotNull UUID doctorId,
+                                @NotNull UUID clinicId,
+                                @NotEmpty Set<String> workingDays,
+                                @NotNull LocalTime startTime,
+                                @NotNull LocalTime endTime,
+                                @Min(1) int slotDuration,
+                                @Min(1) int maxPerDay) {
         Set<DayOfWeek> days = workingDays.stream()
                 .map(day -> DayOfWeek.valueOf(day.toUpperCase()))
                 .collect(Collectors.toSet());
 
-        var clinic = clinicRepo.findDoctorAndClinic(doctorId);
-
-        if (clinic != null) {
-            DoctorSchedule schedule = new DoctorSchedule(
-                    doctorId, clinic.getId(), days, startTime, endTime, slotDuration, maxPerDay
-            );
-            repo.save(schedule);
-        }
-        else{
-            DoctorSchedule schedule = new DoctorSchedule(
-                    doctorId, null, days, startTime, endTime, slotDuration, maxPerDay
-            );
-            repo.save(schedule);
-        }
-
+        DoctorSchedule schedule = new DoctorSchedule(
+                doctorId, clinicId, days, startTime, endTime, slotDuration, maxPerDay
+        );
+        repo.save(schedule);
     }
 
 
     @Override
-    public Optional<DoctorSchedule> getSchedule(UUID doctorId) {
-        if(doctorId == null ) throw new NotFoundException("doctorId is required");
-        return (repo.findByDoctorId(doctorId));
+    public Optional<DoctorSchedule> getSchedule(@NotNull UUID doctorId, @NotNull UUID clinicId) {
+        return (repo.findByDoctorAndClinic(doctorId, clinicId));
     }
 }

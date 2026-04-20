@@ -8,7 +8,13 @@ import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
+import com.health.doctor.adapters.output.nats.DoctorNatsClient;
 import jakarta.inject.Singleton;
+import jakarta.validation.constraints.FutureOrPresent;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import io.micronaut.validation.Validated;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.*;
 import java.util.List;
@@ -16,35 +22,40 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+@Slf4j
 @Singleton
+@Validated
 public class AppointmentUseCase implements AppointmentInterface {
-
 
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
     private final AppointmentRepositoryPort repo;
     private final ScheduleRepositoryPort scheduleRepo;
+    private final DoctorNatsClient natsClient;
 
-    public AppointmentUseCase(AppointmentRepositoryPort repo, ScheduleRepositoryPort scheduleRepo) {
+    public AppointmentUseCase(AppointmentRepositoryPort repo,
+                              ScheduleRepositoryPort scheduleRepo,
+                              DoctorNatsClient natsClient) {
         this.repo = repo;
         this.scheduleRepo = scheduleRepo;
+        this.natsClient = natsClient;
     }
 
     @Override
-    public UUID createAppointment(UUID doctorId, UUID patientId, LocalDate date, LocalTime time, String reasonForVisit) {
-        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
-        if (patientId == null) throw new InvalidArgumentException("Patient ID is required");
-        if (date == null) throw new InvalidArgumentException("Date is required");
-        if (time == null) throw new InvalidArgumentException("Time is required");
-
-        DoctorSchedule schedule = scheduleRepo.findByDoctorId(doctorId)
-                .orElseThrow(() -> new NotFoundException("Doctor schedule not found for doctor: " + doctorId));
+    public UUID createAppointment(@NotNull UUID doctorId,
+                                   @NotNull UUID patientId,
+                                   @NotNull UUID clinicId,
+                                   @NotNull @FutureOrPresent LocalDate date,
+                                   @NotNull LocalTime time,
+                                   @NotBlank String reasonForVisit) {
+        
+        DoctorSchedule schedule = scheduleRepo.findByDoctorAndClinic(doctorId, clinicId)
+                .orElseThrow(() -> new NotFoundException("Doctor schedule not found for doctor: " + doctorId + " at clinic: " + clinicId));
 
         if (!schedule.isWorkingDay(date.getDayOfWeek())) {
-            throw new InvalidArgumentException(
-                    "Doctor does not work on " + date.getDayOfWeek());
+            throw new InvalidArgumentException("Doctor does not work on " + date.getDayOfWeek());
         }
 
-        if(time.isBefore(schedule.getStartTime()))
+        if (time.isBefore(schedule.getStartTime()))
             throw new InvalidArgumentException("Selected time is before doctor's opening time");
 
         if (!schedule.isValidSlot(time)) {
@@ -58,42 +69,43 @@ public class AppointmentUseCase implements AppointmentInterface {
                 appointmentId, doctorId, patientId,
                 date, time, AppointmentStatus.APPOINTMENT_STATUS_PENDING, now, now
         );
+        appointment.setClinicId(clinicId);
         appointment.setReasonForVisit(reasonForVisit);
         repo.save(appointment);
+        
+        natsClient.sendAppointmentCreated(appointmentId.toString());
+        
         return appointmentId;
     }
 
     @Override
-    public void acceptAppointment(Appointment appointment) {
-        if(appointment == null)
-            throw new InvalidArgumentException("Appointment cannot be null");
-        if(appointment.getStatus() != AppointmentStatus.APPOINTMENT_STATUS_PENDING)
+    public void acceptAppointment(@NotNull Appointment appointment) {
+        if (appointment.getStatus() != AppointmentStatus.APPOINTMENT_STATUS_PENDING)
             throw new InvalidArgumentException(
                     "Only Pending Appointments can be accepted, Current status: " + appointment.getStatus()
             );
         repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED.name());
+        natsClient.sendAppointmentAccepted(appointment.getId().toString());
     }
 
     @Override
-    public void cancelAppointment(UUID appointmentId, UUID patientId, UUID doctorId, LocalDate date, LocalTime time, String cancellationReason) {
-        if (appointmentId == null) throw new InvalidArgumentException("Appointment ID is required");
-        repo.cancel(appointmentId,
-                patientId,
-                doctorId,
-                date,
-                time,
-                cancellationReason
-        );
+    public void cancelAppointment(@NotNull UUID appointmentId,
+                                   @NotNull UUID patientId,
+                                   @NotNull UUID doctorId,
+                                   @NotNull LocalDate date,
+                                   @NotNull LocalTime time,
+                                   @NotBlank String cancellationReason) {
+        repo.cancel(appointmentId, patientId, doctorId, date, time, cancellationReason);
+        natsClient.sendAppointmentCancelled(appointmentId.toString());
     }
 
     @Override
-    public void postponeAppointment(Appointment appointment) {
-        if (appointment == null) throw new InvalidArgumentException("Appointment cannot be null");
+    public void postponeAppointment(@NotNull Appointment appointment) {
         if (appointment.getStatus() == AppointmentStatus.APPOINTMENT_STATUS_CANCELLED)
             throw new InvalidArgumentException("Cannot postpone a cancelled appointment");
 
-        DoctorSchedule schedule = scheduleRepo.findByDoctorId(appointment.getDoctorId())
-                .orElseThrow(() -> new InvalidArgumentException("Doctor schedule not found for doctor: " + appointment.getDoctorId()));
+        DoctorSchedule schedule = scheduleRepo.findByDoctorAndClinic(appointment.getDoctorId(), appointment.getClinicId())
+                .orElseThrow(() -> new InvalidArgumentException("Doctor schedule not found"));
 
         LocalDate nextWorkingDay = nextWorkingDay(appointment.getAppointmentDate(), schedule);
         LocalDate oldDate = appointment.getAppointmentDate();
@@ -108,39 +120,34 @@ public class AppointmentUseCase implements AppointmentInterface {
                 appointment.getCreatedAt(),
                 ZonedDateTime.now(NPT).toInstant()
         );
+        postponed.setClinicId(appointment.getClinicId());
         repo.postpone(oldDate, postponed);
+        natsClient.sendAppointmentPostponed(appointment.getId().toString());
     }
 
-    private LocalDate nextWorkingDay(LocalDate from,DoctorSchedule schedule) {
+    private LocalDate nextWorkingDay(LocalDate from, DoctorSchedule schedule) {
         Set<DayOfWeek> workingDays = schedule.getWorkingDays();
-
-        if(workingDays == null || workingDays.isEmpty())
+        if (workingDays == null || workingDays.isEmpty())
             throw new InvalidArgumentException("Doctor has no working days configured");
 
         LocalDate candidate = from.plusDays(1);
         int limit = 30;
-        while (limit-- > 0 ){
-            if (workingDays.contains(candidate.getDayOfWeek())){
+        while (limit-- > 0) {
+            if (workingDays.contains(candidate.getDayOfWeek())) {
                 return candidate;
             }
             candidate = candidate.plusDays(1);
         }
-        throw new InvalidArgumentException(
-                "No Working Days Found"+schedule.getDoctorId()
-        );
+        throw new InvalidArgumentException("No Working Days Found in next 30 days");
     }
 
     @Override
-    public List<Appointment> getAppointment(UUID doctorId, LocalDate date) {
-        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
-        if (date == null) throw new InvalidArgumentException("Date is required");
+    public List<Appointment> getAppointment(@NotNull UUID doctorId, @NotNull LocalDate date) {
         return repo.findByDoctorAndDate(doctorId, date);
     }
 
     @Override
-    public List<Appointment> pendingAppointment(UUID doctorId, LocalDate date) {
-        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
-        if (date == null) throw new InvalidArgumentException("Date is required");
+    public List<Appointment> pendingAppointment(@NotNull UUID doctorId, @NotNull LocalDate date) {
         return repo.findPending(doctorId, date);
     }
 }

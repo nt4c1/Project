@@ -66,10 +66,10 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
     }
 
     @Override
-    public Optional<DoctorSchedule> findByDoctorId(UUID doctorId) {
+    public Optional<DoctorSchedule> findByDoctorAndClinic(UUID doctorId, UUID clinicId) {
         Row r = session.execute(
-                "SELECT * FROM doctor_service.doctor_schedules WHERE doctor_id=?",
-                doctorId
+                "SELECT * FROM doctor_service.doctor_schedules WHERE doctor_id=? AND clinic_id=?",
+                doctorId, clinicId
         ).one();
         if (r == null) return Optional.empty();
 

@@ -38,6 +38,7 @@ CREATE TABLE clinics_by_geohash (
                                     latitude   DOUBLE,
                                     longitude  DOUBLE,
                                     is_active  BOOLEAN,
+                                    is_deleted BOOLEAN,
                                     PRIMARY KEY (geohash, clinic_id)
 );
 
@@ -46,6 +47,7 @@ CREATE TABLE clinics_by_location_text (
                                           clinic_id     UUID,
                                           name          TEXT,
                                           is_active     BOOLEAN,
+                                          is_deleted    BOOLEAN,
                                           PRIMARY KEY (location_text, clinic_id)
 );
 
@@ -72,7 +74,7 @@ CREATE TABLE doctors_by_email (
 CREATE TABLE doctors (
                          doctor_id      UUID PRIMARY KEY,
                          name           TEXT,
-                         clinic_id      UUID,
+                         clinic_ids     LIST<UUID>,
                          type           TEXT,
                          specialization TEXT,
                          is_active      BOOLEAN,
@@ -89,6 +91,7 @@ CREATE TABLE doctors_by_clinic (
                                    specialization TEXT,
                                    is_active      BOOLEAN,
                                    is_deleted     BOOLEAN,
+                                   created_at     TIMESTAMP,
                                    updated_at     TIMESTAMP,
                                    PRIMARY KEY (clinic_id, doctor_id)
 );
@@ -105,15 +108,15 @@ CREATE TABLE doctors_by_individual (
 
 CREATE TABLE doctors_by_location (
                                      geohash_prefix TEXT,
+                                     clinic_id      UUID,
                                      doctor_id      UUID,
                                      name           TEXT,
                                      specialization TEXT,
-                                     clinic_id      UUID,
                                      latitude       DOUBLE,
                                      longitude      DOUBLE,
                                      location_text  TEXT,
                                      is_active      BOOLEAN,
-                                     PRIMARY KEY (geohash_prefix, doctor_id)
+                                     PRIMARY KEY (geohash_prefix, clinic_id, doctor_id)
 );
 
 -- ============================================================
@@ -122,7 +125,7 @@ CREATE TABLE doctors_by_location (
 
 -- Base weekly schedule (defaults)
 CREATE TABLE doctor_schedules (
-                                  doctor_id             UUID PRIMARY KEY,
+                                  doctor_id             UUID,
                                   clinic_id             UUID,
                                   working_days          SET<TEXT>,
                                   start_time            TIME,
@@ -130,7 +133,8 @@ CREATE TABLE doctor_schedules (
                                   slot_duration_minutes INT,
                                   max_appointments_day  INT,
                                   created_at            TIMESTAMP,
-                                  updated_at            TIMESTAMP
+                                  updated_at            TIMESTAMP,
+                                  PRIMARY KEY (doctor_id, clinic_id)
 );
 
 -- Per-day override (holiday, different hours, partial day off)
@@ -197,6 +201,7 @@ CREATE TABLE appointments_by_id (
                                     appointment_id   UUID PRIMARY KEY,
                                     doctor_id        UUID,
                                     patient_id       UUID,
+                                    clinic_id        UUID,
                                     appointment_date DATE,
                                     scheduled_time   TIMESTAMP,
                                     status           TEXT,        -- SCHEDULED | CONFIRMED | CANCELLED | COMPLETED | NO_SHOW
@@ -214,10 +219,13 @@ CREATE TABLE appointments_by_doctor (
                                         scheduled_time   TIMESTAMP,
                                         appointment_id   UUID,
                                         patient_id       UUID,
+                                        clinic_id        UUID,
                                         patient_name     TEXT,
                                         patient_phone    TEXT,
                                         status           TEXT,
                                         reason_for_visit TEXT,
+                                        doctor_notes     TEXT,
+                                        cancellation_reason TEXT,
                                         created_at       TIMESTAMP,
                                         updated_at       TIMESTAMP,
                                         PRIMARY KEY ((doctor_id, appointment_date), scheduled_time, appointment_id)
@@ -232,7 +240,10 @@ CREATE TABLE appointments_by_doctor_status (
                                                scheduled_time   TIMESTAMP,
                                                appointment_id   UUID,
                                                patient_id       UUID,
+                                               clinic_id        UUID,
                                                patient_name     TEXT,
+                                               patient_phone    TEXT,
+                                               reason_for_visit TEXT,
                                                PRIMARY KEY ((doctor_id, status, appointment_date), scheduled_time, appointment_id)
 ) WITH CLUSTERING ORDER BY (scheduled_time ASC, appointment_id ASC)
    AND default_time_to_live = 15552000;
@@ -244,11 +255,13 @@ CREATE TABLE appointments_by_patient (
                                          scheduled_time   TIMESTAMP,
                                          appointment_id   UUID,
                                          doctor_id        UUID,
+                                         clinic_id        UUID,
                                          doctor_name      TEXT,
                                          clinic_name      TEXT,
                                          specialization   TEXT,
                                          status           TEXT,
                                          reason_for_visit TEXT,
+                                         cancellation_reason TEXT,
                                          PRIMARY KEY ((patient_id, appointment_date), scheduled_time, appointment_id)
 ) WITH CLUSTERING ORDER BY (scheduled_time ASC, appointment_id ASC)
    AND default_time_to_live = 15552000;

@@ -21,11 +21,8 @@ dependencies {
     // gRPC server
     implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
 
-    // Auth
-    implementation "org.mindrot:jbcrypt:${rootProject.ext.jbcryptVersion}"
-    implementation "io.jsonwebtoken:jjwt-api:${rootProject.ext.jjwtVersion}"
-    runtimeOnly    "io.jsonwebtoken:jjwt-impl:${rootProject.ext.jjwtVersion}"
-    runtimeOnly    "io.jsonwebtoken:jjwt-jackson:${rootProject.ext.jjwtVersion}"
+    // NATS
+    implementation "io.micronaut.nats:micronaut-nats"
 
     // Geohash
     implementation "ch.hsr:geohash:${rootProject.ext.geohashVersion}"

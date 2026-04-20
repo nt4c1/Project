@@ -1,33 +1,37 @@
 package com.health.doctor.application.usecase.implementation;
 
+import com.health.common.auth.JwtProvider;
 import com.health.doctor.application.usecase.interfaces.DoctorInterface;
+import com.health.doctor.application.service.LocationService;
 import com.health.doctor.domain.exception.AlreadyExistsException;
 import com.health.doctor.domain.exception.InvalidArgumentException;
 import com.health.doctor.domain.exception.NotFoundException;
-import com.health.doctor.domain.model.Doctor;
-import com.health.doctor.domain.model.DoctorCredentials;
-import com.health.doctor.domain.model.DoctorType;
-import com.health.doctor.domain.model.Location;
-import com.health.doctor.domain.ports.ClinicRepositoryPort;
-import com.health.doctor.domain.ports.CredentialsRepositoryPort;
-import com.health.doctor.domain.ports.DoctorRepositoryPort;
-import com.health.doctor.infrastructure.JwtProvider;
+import com.health.doctor.domain.model.*;
+import com.health.doctor.domain.ports.*;
+import com.health.doctor.adapters.output.nats.DoctorNatsClient;
+import com.health.doctor.adapters.output.persistence.repository.DoctorRepositoryImpl;
+import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
-import com.health.grpc.doctor.TokenResponse;
-import com.health.doctor.application.service.LocationService;
-import com.health.grpc.doctor.DoctorMessage;
+import com.health.grpc.common.DoctorMessage;
 import jakarta.inject.Singleton;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
+import io.micronaut.validation.Validated;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Singleton
+@Validated
 public class DoctorUseCase implements DoctorInterface {
 
     private final DoctorRepositoryPort repo;
@@ -35,79 +39,61 @@ public class DoctorUseCase implements DoctorInterface {
     private final ClinicRepositoryPort clinicRepo;
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
+    private final DoctorNatsClient natsClient;
 
-    public DoctorUseCase(DoctorRepositoryPort repo, CredentialsRepositoryPort credentialsRepo, ClinicRepositoryPort clinicRepo, JwtProvider jwtProvider, LocationService locationService) {
+    public DoctorUseCase(DoctorRepositoryPort repo,
+                         CredentialsRepositoryPort credentialsRepo,
+                         ClinicRepositoryPort clinicRepo,
+                         JwtProvider jwtProvider,
+                         LocationService locationService,
+                         DoctorNatsClient natsClient) {
         this.repo = repo;
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
+        this.natsClient = natsClient;
     }
 
-
     @Override
-    public UUID createDoctor(String name, UUID clinicId, DoctorType type, String specialization, String email, String password) {
-
-        if (name == null || name.isBlank())
-            throw new InvalidArgumentException("Name is required");
-        if (type == null)
-            throw new InvalidArgumentException("Doctor type is required");
-        if (email == null || email.isBlank())
-            throw new InvalidArgumentException("Email is required");
-        if (password == null || password.length() < 6)
-            throw new InvalidArgumentException("Password must be at least 6 characters");
-        if (specialization == null || specialization.isBlank())
-            throw new InvalidArgumentException("Specialization is required");
+    public UUID createDoctor(@NotBlank String name,
+                             List<UUID> clinicIds,
+                             @NotNull DoctorType type,
+                             @NotBlank String specialization,
+                             @NotBlank @Email String email,
+                             @NotBlank @Size(min = 6) String password) {
 
         if (credentialsRepo.findByEmail(email).isPresent())
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
 
         UUID doctorId = UUID.randomUUID();
-
         String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-
         Instant now = Instant.now(Clock.system(ZoneId.of("Asia/Kathmandu")));
 
-        Doctor doctor = new Doctor(
-                doctorId,
-                name,
-                clinicId,
-                type,
-                specialization,
-                true,
-                false,
-                now,
-                now
-        );
-
-        DoctorCredentials credentials = new DoctorCredentials(
-                doctorId,
-                email,
-                passwordHash,
-                Instant.now(),
-                Instant.now()
-        );
+        Doctor doctor = new Doctor(doctorId, name, clinicIds, type, specialization, true, false, now, now);
+        DoctorCredentials credentials = new DoctorCredentials(doctorId, email, passwordHash, now, now);
 
         credentialsRepo.save(credentials);
         repo.save(doctor);
 
-        if(clinicId != null)
-        {
-            Location local = clinicRepo.getLocation(clinicId);
-            repo.updateLocation(doctorId,local);
+        if (clinicIds != null && !clinicIds.isEmpty()) {
+            for (UUID clinicId : clinicIds) {
+                Location local = clinicRepo.getLocation(clinicId);
+                if (local != null) {
+                    repo.updateLocation(doctorId, clinicId, local);
+                }
+            }
+        } else {
+            // For individual doctors, we might want to resolve their location if they provide one
+            // but here we just ensure they have the NO_CLINIC_ID if needed in other places.
         }
 
+        natsClient.sendDoctorCreated(doctorId.toString());
         return doctorId;
     }
 
     @Override
-    public TokenResponse loginDoctor(String email, String password) {
-
-        if(email==null || email.isBlank())
-            throw new InvalidArgumentException("Email is Required");
-        if (password == null || password.isBlank())
-            throw new InvalidArgumentException("Password is Required");
-
+    public TokenResponse loginDoctor(@NotBlank @Email String email, @NotBlank String password) {
         DoctorCredentials credentials = credentialsRepo.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Doctor not found: " + email));
 
@@ -117,11 +103,14 @@ public class DoctorUseCase implements DoctorInterface {
         Doctor doctor = repo.findById(credentials.getDoctorId())
                 .orElseThrow(() -> new NotFoundException("Doctor profile not found"));
 
-        String accessToken = jwtProvider.generateAccessToken(
-                doctor.getId().toString(), "Doctor");
-        String refreshToken = jwtProvider.generateRefreshToken(
-                doctor.getId().toString());
+        String accessToken = jwtProvider.generateAccessToken(doctor.getId().toString(), "Doctor");
+        String refreshToken = jwtProvider.generateRefreshToken(doctor.getId().toString());
+
         log.info("Doctor logged in: {} ({})", doctor.getName(), doctor.getId());
+
+        List<String> clinicIdsString = (doctor.getClinicIds() != null && !doctor.getClinicIds().isEmpty())
+                ? doctor.getClinicIds().stream().map(UUID::toString).collect(Collectors.toList())
+                : List.of(DoctorRepositoryImpl.NO_CLINIC_ID.toString());
 
         return TokenResponse.newBuilder()
                 .setSuccess(true)
@@ -130,18 +119,18 @@ public class DoctorUseCase implements DoctorInterface {
                 .setDoctor(DoctorMessage.newBuilder()
                         .setDoctorId(doctor.getId().toString())
                         .setName(doctor.getName())
-                        .setType(com.health.grpc.doctor.DoctorType.valueOf(doctor.getType().name()))
+                        .setType(com.health.grpc.common.DoctorType.valueOf(doctor.getType().name()))
                         .setSpecialization(doctor.getSpecialization())
                         .setIsActive(doctor.isActive())
-                        .setClinicId(doctor.getClinicId() != null ? doctor.getClinicId().toString() : "None")
+                        .addAllClinicIds(clinicIdsString)
                 )
                 .setMessage("Login Successfully")
                 .build();
     }
 
     @Override
-    public ValidateTokenResponse validateDoctor(String token) {
-        try{
+    public ValidateTokenResponse validateDoctor(@NotBlank String token) {
+        try {
             String userid = jwtProvider.extractUserId(token);
             String role = jwtProvider.extractRole(token);
             boolean valid = jwtProvider.isValid(token);
@@ -162,59 +151,38 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public List<Doctor> getDoctorsByClinic(UUID clinicId) {
-        if (clinicId == null) throw new InvalidArgumentException("Clinic ID is required");
+    public List<Doctor> getDoctorsByClinic(@NotNull UUID clinicId) {
         return repo.findByClinicId(clinicId);
     }
 
     @Override
-    public List<Doctor> getDoctorsByLocationText(String locationText) {
-        if (locationText == null || locationText.isBlank()) 
-            throw new InvalidArgumentException("Location text is required");
-            
+    public List<Doctor> getDoctorsByLocationText(@NotBlank String locationText) {
         Location location = locationService.resolve(locationText);
-        String geohash = location.getGeohash().substring(0,5);
-        log.info("Searching geohash: {}", geohash);
-        return repo.findNearby(geohash, location.getLatitude(), location.getLongitude());
+        // Repository will handle the precision zoom-out logic internally
+        return repo.findNearby(location.getGeohash(), location.getLatitude(), location.getLongitude());
     }
 
     @Override
-    public List<Doctor> getDoctorsByLocationGeohash(String geohashPrefix) {
-        if (geohashPrefix == null || geohashPrefix.isBlank())
-            throw new InvalidArgumentException("Geohash prefix is required");
+    public List<Doctor> getDoctorsByLocationGeohash(@NotBlank String geohashPrefix) {
         return repo.findByGeohashPrefix(geohashPrefix);
     }
 
     @Override
-    public void updateDoctorLocation(UUID doctorId, String locationText) {
-        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
-        if (locationText == null || locationText.isBlank()) throw new InvalidArgumentException("Location text is required");
-
-        UUID clinicId = repo.findClinicId(doctorId);
-
-        if(clinicId !=null)
-            throw new AlreadyExistsException("Clinic Doctor's location can only be handled by Clinics");
-
+    public void updateDoctorLocation(@NotNull UUID doctorId, @NotNull UUID clinicId, @NotBlank String locationText) {
         Location location = locationService.resolve(locationText);
-        repo.updateLocation(doctorId, location);
+        repo.updateLocation(doctorId, clinicId, location);
+        natsClient.sendDoctorUpdated(doctorId.toString());
     }
 
     @Override
-    public void updateDoctor(UUID doctorId, String email, String password) {
-        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
-        if (email == null || email.isBlank()) throw new InvalidArgumentException("Email is required");
-        if (password == null || password.isBlank()) throw new InvalidArgumentException("Password is required");
-
+    public void updateDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password) {
         repo.updateDoctor(doctorId, email, password);
+        natsClient.sendDoctorUpdated(doctorId.toString());
     }
 
     @Override
-    public void deleteDoctor(UUID doctorId, String email, String password) {
-        if (doctorId == null) throw new InvalidArgumentException("Doctor ID is required");
-        if (email == null || email.isBlank()) throw new InvalidArgumentException("Email is required");
-        if (password == null || password.isBlank()) throw new InvalidArgumentException("Password is required");
-
+    public void deleteDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password) {
         repo.deleteDoctor(doctorId, email, password);
+        natsClient.sendDoctorUpdated(doctorId.toString());
     }
-
 }

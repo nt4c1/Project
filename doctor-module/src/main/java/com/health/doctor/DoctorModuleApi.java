@@ -23,10 +23,10 @@ public interface DoctorModuleApi {
     // ── Doctor discovery ──────────────────────────────────────────────────────
     List<Doctor> getNearbyDoctors(String locationText);
     List<Doctor> getDoctorsByGeohash(String geohashPrefix);
-    Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId);
+    Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId, UUID clinicId);
 
     // ── Appointments (patient-initiated actions) ──────────────────────────────
-    UUID bookAppointment(UUID doctorId, UUID patientId,
+    UUID bookAppointment(UUID doctorId, UUID patientId, UUID clinicId,
                          LocalDate date, LocalTime time,
                          String reasonForVisit);
 

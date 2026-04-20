@@ -28,7 +28,7 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
     @Override
     public void save(Patient patient) {
-        Instant now = Instant.parse(Mapper.ToNptTime(Instant.now()));
+        Instant now = Instant.now();
 
         // patients — canonical row with audit fields
         session.execute(

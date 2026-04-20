@@ -19,6 +19,8 @@ import static com.datastax.oss.driver.api.querybuilder.QueryBuilder.*;
 @Singleton
 public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
+    public static final UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     private final CqlSession session;
 
     // ── Prepared statements ────────────────────────
@@ -50,6 +52,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final PreparedStatement deleteDoctorClinic;
     private final PreparedStatement deleteDoctorIndividual;
     private final PreparedStatement deleteDoctorSchedules;
+    private final PreparedStatement GetDoctorType;
+    private final PreparedStatement selectGeoPrefixByDoctor;
     // ─────────────────────────────────────────────
 
 
@@ -62,7 +66,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 insertInto("doctor_service", "doctors")
                         .value("doctor_id", bindMarker("doctor_id"))
                         .value("name", bindMarker("name"))
-                        .value("clinic_id", bindMarker("clinic_id"))
+                        .value("clinic_ids", bindMarker("clinic_ids"))
                         .value("type", bindMarker("type"))
                         .value("specialization", bindMarker("specialization"))
                         .value("is_active", bindMarker("is_active"))
@@ -95,6 +99,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .value("specialization", bindMarker("specialization"))
                         .value("is_active", bindMarker("is_active"))
                         .value("is_deleted", bindMarker("is_deleted"))
+                        .value("created_at", bindMarker("created_at"))
                         .value("updated_at", bindMarker("updated_at"))
                         .build()
         );
@@ -103,10 +108,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         insertDoctorByLocation = session.prepare(
                 insertInto("doctor_service", "doctors_by_location")
                         .value("geohash_prefix", bindMarker("geohash_prefix"))
+                        .value("clinic_id", bindMarker("clinic_id"))
                         .value("doctor_id", bindMarker("doctor_id"))
                         .value("name", bindMarker("name"))
                         .value("specialization", bindMarker("specialization"))
-                        .value("clinic_id", bindMarker("clinic_id"))
                         .value("latitude", bindMarker("latitude"))
                         .value("longitude", bindMarker("longitude"))
                         .value("location_text", bindMarker("location_text"))
@@ -122,10 +127,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .build()
         );
 
-        // SELECT name/specialization/clinic_id from doctors (for location denormalization)
+        // SELECT name/specialization/clinic_ids from doctors (for location denormalization)
         selectDoctorProfileForLocation = session.prepare(
                 selectFrom("doctor_service", "doctors")
-                        .columns("name", "specialization", "clinic_id")
+                        .columns("name", "specialization", "clinic_ids")
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
@@ -133,8 +138,11 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         // SELECT from doctors_by_location by geohash prefix
         selectByGeohash = session.prepare(
                 selectFrom("doctor_service", "doctors_by_location")
-                        .all()
+                        .columns("doctor_id", "clinic_id", "name", "specialization",
+                                "latitude", "longitude", "is_active")
                         .whereColumn("geohash_prefix").isEqualTo(bindMarker("geohash_prefix"))
+                        .whereColumn("is_active").isEqualTo(bindMarker("is_active"))
+                        .allowFiltering()
                         .build()
         );
 
@@ -143,6 +151,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 selectFrom("doctor_service", "doctors_by_clinic")
                         .all()
                         .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("is_active").isEqualTo(bindMarker("is_active"))
+                        .allowFiltering()
                         .build()
         );
 
@@ -167,144 +177,164 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         //UPDATE doctor_credentials
         updateDoctorCredentials = session.prepare(
                 update("doctor_service", "doctor_credentials")
-                        .setColumn("email", bindMarker())
-                        .setColumn("password_hash", bindMarker())
-                        .setColumn("updated_at", bindMarker())
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .setColumn("email", bindMarker("email"))
+                        .setColumn("password_hash", bindMarker("password_hash"))
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
-        //Update doctor(updated_at)--> this timeframe is to be updated
+        //Update doctor(updated_at)
         updateDoctorUpdatedAt = session.prepare(
-                update("doctor_service", "doctor_credentials")
-                        .setColumn("updated_at", bindMarker())
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                update("doctor_service", "doctors")
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
-        //Update doctor(updated_at)--> this timeframe is to be updated for individual
+        //Update doctor(updated_at) for individual
         updateDoctorIndividual = session.prepare(
                 update("doctor_service", "doctors_by_individual")
-                        .setColumn("updated_at", bindMarker())
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
-        //Update doctor(updated_at)--> this timeframe is to be updated for clinic
+        //Update doctor(updated_at) for clinic
         updateDoctorClinic = session.prepare(
                 update("doctor_service", "doctors_by_clinic")
-                        .setColumn("updated_at", bindMarker())
-                        .whereColumn("clinic_id").isEqualTo(bindMarker())
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
         //DELETE from appointments_by_id
         deleteAppointmentsById = session.prepare(
                 deleteFrom("doctor_service", "appointments_by_id")
-                        .whereColumn("appointment_id").isEqualTo(bindMarker())
+                        .whereColumn("appointment_id").isEqualTo(bindMarker("appointment_id"))
                         .build()
         );
 
-        // Delete from appointments_by_doctor (current row)
+        // Delete from appointments_by_doctor
         deleteAppointmentsByDoctor = session.prepare(
                 deleteFrom("doctor_service", "appointments_by_doctor")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
-                        .whereColumn("appointment_date").isEqualTo(bindMarker())
-                        .whereColumn("scheduled_time").isEqualTo(bindMarker())
-                        .whereColumn("appointment_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .whereColumn("appointment_date").isEqualTo(bindMarker("appointment_date"))
+                        .whereColumn("scheduled_time").isEqualTo(bindMarker("scheduled_time"))
+                        .whereColumn("appointment_id").isEqualTo(bindMarker("appointment_id"))
                         .build()
         );
 
         // Delete from appointments_by_doctor_status
         deleteAppointmentByDoctorStatus = session.prepare(
                 deleteFrom("doctor_service", "appointments_by_doctor_status")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
-                        .whereColumn("status").isEqualTo(bindMarker())
-                        .whereColumn("appointment_date").isEqualTo(bindMarker())
-                        .whereColumn("scheduled_time").isEqualTo(bindMarker())
-                        .whereColumn("appointment_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .whereColumn("status").isEqualTo(bindMarker("status"))
+                        .whereColumn("appointment_date").isEqualTo(bindMarker("appointment_date"))
+                        .whereColumn("scheduled_time").isEqualTo(bindMarker("scheduled_time"))
+                        .whereColumn("appointment_id").isEqualTo(bindMarker("appointment_id"))
                         .build()
 
         );
         // Delete from appointments_by_patient
         deleteAppointmentsByPatient = session.prepare(
                 deleteFrom("doctor_service", "appointments_by_patient")
-                        .whereColumn("patient_id").isEqualTo(bindMarker())
-                        .whereColumn("appointment_date").isEqualTo(bindMarker())
-                        .whereColumn("scheduled_time").isEqualTo(bindMarker())
-                        .whereColumn("appointment_id").isEqualTo(bindMarker())
+                        .whereColumn("patient_id").isEqualTo(bindMarker("patient_id"))
+                        .whereColumn("appointment_date").isEqualTo(bindMarker("appointment_date"))
+                        .whereColumn("scheduled_time").isEqualTo(bindMarker("scheduled_time"))
+                        .whereColumn("appointment_id").isEqualTo(bindMarker("appointment_id"))
                         .build()
         );
         //Decrease counter
         decreaseCounter = session.prepare(
                 update("doctor_service", "appointment_count_by_doctor_date")
                         .decrement("count")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
-                        .whereColumn("appointment_date").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .whereColumn("appointment_date").isEqualTo(bindMarker("appointment_date"))
                         .build()
         );
 
         //DELETE from appointment_count_by_doctor_date
         deleteAppointmentsByDoctorDate = session.prepare(
                 deleteFrom("doctor_service", "appointment_count_by_doctor_date")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
         //DELETE from doctors
         deleteDoctors = session.prepare(
                 deleteFrom("doctor_service", "doctors")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
         //DELETE from doctor_credentials
         deleteDoctorCredentials = session.prepare(
                 deleteFrom("doctor_service", "doctor_credentials")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
         //DELETE from doctor Lookup
         deleteDoctorLookup = session.prepare(
                 deleteFrom("doctor_service", "doctors_by_email")
-                        .whereColumn("email").isEqualTo(bindMarker())
+                        .whereColumn("email").isEqualTo(bindMarker("email"))
                         .build()
         );
 
         //DELETE from doctor_location
         deleteDoctorLocation = session.prepare(
                 deleteFrom("doctor_service", "doctors_by_location")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
-                        .whereColumn("geohash_prefix").isEqualTo(bindMarker())
+                        .whereColumn("geohash_prefix").isEqualTo(bindMarker("geohash_prefix"))
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
         //DELETE from doctor_clinic
         deleteDoctorClinic = session.prepare(
                 deleteFrom("doctor_service", "doctors_by_clinic")
-                        .whereColumn("clinic_id").isEqualTo(bindMarker())
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
         //DELETE from doctor_individual
         deleteDoctorIndividual = session.prepare(
                 deleteFrom("doctor_service", "doctors_by_individual")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
         //DELETE from doctor_schedules
         deleteDoctorSchedules = session.prepare(
                 deleteFrom("doctor_service", "doctor_schedules")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
-        //SELECT from doctors_location (geohash)
+        //SELECT from doctors_location
         selectGeoPrefix = session.prepare(
                 selectFrom("doctor_service", "doctors_by_location")
                         .column("geohash_prefix")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker())
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .allowFiltering()
+                        .build()
+        );
+        
+        //GET Doctor Type
+        GetDoctorType = session.prepare(
+                selectFrom("doctor_service", "doctors")
+                        .column("type")
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .build()
+        );
+
+        //For Delete
+        selectGeoPrefixByDoctor = session.prepare(
+                selectFrom("doctor_service", "doctors_by_location")
+                        .columns("geohash_prefix", "clinic_id")
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .allowFiltering()
                         .build()
         );
     }
@@ -316,11 +346,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     public void save(Doctor d) {
         Instant now = Instant.now();
 
-        // doctors — canonical profile (no credentials)
         session.execute(insertDoctor.bind()
                 .setUuid("doctor_id", d.getId())
                 .setString("name", d.getName())
-                .setUuid("clinic_id", d.getClinicId())
+                .setList("clinic_ids", d.getClinicIds(), UUID.class)
                 .setString("type", d.getType().name())
                 .setString("specialization", d.getSpecialization())
                 .setBoolean("is_active", d.isActive())
@@ -329,8 +358,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setInstant("updated_at", now)
         );
 
-        if (d.getClinicId() == null) {
-            // doctors_by_individual — standalone doctor read model
+        if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
             session.execute(insertDoctorByIndividual.bind()
                     .setUuid("doctor_id", d.getId())
                     .setString("name", d.getName())
@@ -341,27 +369,46 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                     .setInstant("updated_at", now)
             );
         } else {
-            // doctors_by_clinic — clinic roster read model
-            session.execute(insertDoctorByClinic.bind()
-                    .setUuid("clinic_id", d.getClinicId())
-                    .setUuid("doctor_id", d.getId())
-                    .setString("name", d.getName())
-                    .setString("type", d.getType().name())
-                    .setString("specialization", d.getSpecialization())
-                    .setBoolean("is_active", d.isActive())
-                    .setBoolean("is_deleted", false)
-                    .setInstant("updated_at", now)
-            );
+            for (UUID clinicId : d.getClinicIds()) {
+                session.execute(insertDoctorByClinic.bind()
+                        .setUuid("clinic_id", clinicId)
+                        .setUuid("doctor_id", d.getId())
+                        .setString("name", d.getName())
+                        .setString("type", d.getType().name())
+                        .setString("specialization", d.getSpecialization())
+                        .setBoolean("is_active", d.isActive())
+                        .setBoolean("is_deleted", false)
+                        .setInstant("created_at", now)
+                        .setInstant("updated_at", now)
+                );
+            }
         }
     }
 
     // ── Location ──────────────────────────────────────────────────────────────
 
     @Override
-    public void updateLocation(UUID doctorId, Location location) {
-        String prefix = location.getGeohash().substring(0, 5);
+    public void updateLocation(UUID doctorId, UUID clinicId, Location location) {
 
-        // Fetch name + specialization to denormalize — doctor must be saved first
+        UUID effectiveClinicId = (clinicId !=null) ? clinicId : NO_CLINIC_ID;
+        String newPrefix = location.getGeohash().substring(0, 6);
+
+
+        // 1. Find and delete old geohash entry for this doctor/clinic combo
+        ResultSet rs = session.execute(selectGeoPrefix.bind()
+                .setUuid("doctor_id", doctorId)
+                .setUuid("clinic_id", effectiveClinicId));
+        
+        for (Row row : rs) {
+            String oldPrefix = row.getString("geohash_prefix");
+            // If the prefix changed (or just to be safe), delete the old row
+            session.execute(deleteDoctorLocation.bind()
+                    .setString("geohash_prefix", oldPrefix)
+                    .setUuid("clinic_id", effectiveClinicId)
+                    .setUuid("doctor_id", doctorId));
+        }
+
+        // 2. Fetch profile info for denormalization
         Row profileRow = session.execute(
                 selectDoctorProfileForLocation.bind()
                         .setUuid("doctor_id", doctorId)
@@ -369,14 +416,14 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         String name = profileRow != null ? profileRow.getString("name") : null;
         String specialization = profileRow != null ? profileRow.getString("specialization") : null;
-        UUID clinicId = profileRow != null ? profileRow.getUuid("clinic_id") : null;
 
+        // 3. Insert new entry
         session.execute(insertDoctorByLocation.bind()
-                .setString("geohash_prefix", prefix)
+                .setString("geohash_prefix", newPrefix)
+                .setUuid("clinic_id", effectiveClinicId)
                 .setUuid("doctor_id", doctorId)
                 .setString("name", name)
                 .setString("specialization", specialization)
-                .setUuid("clinic_id", clinicId)
                 .setDouble("latitude", location.getLatitude())
                 .setDouble("longitude", location.getLongitude())
                 .setString("location_text", location.getLocationText())
@@ -401,39 +448,58 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         ResultSet rs = session.execute(
                 selectByGeohash.bind()
                         .setString("geohash_prefix", prefix)
+                        .setBoolean("is_active", true)
         );
+
         List<Doctor> list = new ArrayList<>();
-        for (Row r : rs) list.add(mapLocationRow(r));
+        for (Row r : rs) {
+            UUID doctorId = r.getUuid("doctor_id");
+            Row rt = session.execute(GetDoctorType.bind().setUuid("doctor_id", doctorId)).one();
+            DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
+            list.add(mapLocationRow(r, type, 0.0)); // Default distance for this method
+        }
         return list;
     }
 
     @Override
     public List<Doctor> findNearby(String geohash, double lat, double lon) {
-        GeoHash center = GeoHash.fromGeohashString(geohash);
+        // Zoom out strategy: start at precision 6, then 5, then 4 if nothing found
+        for (int precision = 6; precision >= 4; precision--) {
+            String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
+            List<Doctor> found = searchInPrefixAndNeighbors(prefix, lat, lon);
+            if (!found.isEmpty()) return found;
+        }
+        return Collections.emptyList();
+    }
+
+    private List<Doctor> searchInPrefixAndNeighbors(String prefix, double lat, double lon) {
+        GeoHash center = GeoHash.fromGeohashString(prefix);
         GeoHash[] neighbors = center.getAdjacent();
 
         Set<String> prefixes = new HashSet<>();
-        prefixes.add(center.toBase32().substring(0, 5));
+        prefixes.add(prefix);
         for (GeoHash neighbor : neighbors) {
-            prefixes.add(neighbor.toBase32().substring(0, 5));
+            prefixes.add(neighbor.toBase32().substring(0, prefix.length()));
         }
 
-        log.info("Searching geohash prefixes: {}", prefixes);
-
-        record DoctorWithDistance(Doctor doctor, double distanceKm) {
-        }
+        record DoctorWithDistance(Doctor doctor, double distanceKm) {}
         List<DoctorWithDistance> candidates = new ArrayList<>();
 
-        for (String prefix : prefixes) {
+        for (String p : prefixes) {
             ResultSet rs = session.execute(
                     selectByGeohash.bind()
-                            .setString("geohash_prefix", prefix)
+                            .setString("geohash_prefix", p)
+                            .setBoolean("is_active", true)
             );
             for (Row r : rs) {
                 double dLat = r.getDouble("latitude");
                 double dLon = r.getDouble("longitude");
                 double dist = haversineKm(lat, lon, dLat, dLon);
-                candidates.add(new DoctorWithDistance(mapLocationRow(r), dist));
+
+                UUID doctorId = r.getUuid("doctor_id");
+                Row rt = session.execute(GetDoctorType.bind().setUuid("doctor_id", doctorId)).one();
+                DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
+                candidates.add(new DoctorWithDistance(mapLocationRow(r, type, dist), dist));
             }
         }
 
@@ -455,7 +521,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             list.add(new Doctor(
                     r.getUuid("doctor_id"),
                     r.getString("name"),
-                    clinicId,
+                    Collections.singletonList(clinicId),
                     DoctorType.valueOf(r.getString("type")),
                     r.getString("specialization"),
                     r.getBoolean("is_active")
@@ -473,28 +539,34 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 selectDoctorById.bind()
                         .setUuid("doctor_id", doctorId)
         ).one();
-        UUID clinicId = r != null ? r.getUuid("clinic_id") : null;
+        List<UUID> clinicIds = r != null ? r.getList("clinic_ids", UUID.class) : null;
 
         session.execute(updateDoctorCredentials.bind()
                 .setString("email", email)
                 .setString("password_hash", passwordHash)
                 .setInstant("updated_at", now)
+                .setUuid("doctor_id", doctorId)
         );
 
         session.execute(updateDoctorUpdatedAt.bind()
                 .setInstant("updated_at", now)
+                .setUuid("doctor_id", doctorId)
         );
 
-        if (clinicId == null) {
+        if (clinicIds == null || clinicIds.isEmpty()) {
             session.execute(updateDoctorIndividual.bind()
                     .setInstant("updated_at", now)
+                    .setUuid("doctor_id", doctorId)
             );
         } else {
-            session.execute(updateDoctorClinic.bind()
-                    .setInstant("updated_at", now)
-            );
+            for (UUID clinicId : clinicIds) {
+                session.execute(updateDoctorClinic.bind()
+                        .setInstant("updated_at", now)
+                        .setUuid("clinic_id", clinicId)
+                        .setUuid("doctor_id", doctorId)
+                );
+            }
         }
-
     }
 
     @Override
@@ -524,124 +596,78 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             UUID patientId = r1.getUuid("patient_id");
             String status = r1.getString("status");
 
-            session.execute(
-                    deleteAppointmentsById.bind()
-                            .setUuid("appointment_id", apptId)
-            );
-
-            session.execute(
-                    deleteAppointmentsByDoctor.bind()
-                            .setUuid("doctor_id", doctorId)
-                            .setLocalDate("appointment_date", apptDate)
-                            .setInstant("scheduled_time", apptTime)
-                            .setUuid("appointment_id", apptId)
-            );
-
-            session.execute(
-                    deleteAppointmentByDoctorStatus.bind()
-                            .setUuid("doctor_id", doctorId)
-                            .setString("status", status)
-                            .setLocalDate("appointment_date", apptDate)
-                            .setInstant("scheduled_time", apptTime)
-                            .setUuid("appointment_id", apptId)
-            );
-
-            session.execute(
-                    deleteAppointmentsByPatient.bind()
-                            .setUuid("patient_id", patientId)
-                            .setLocalDate("appointment_date", apptDate)
-                            .setInstant("scheduled_time", apptTime)
-                            .setUuid("appointment_id", apptId)
-            );
-
-            session.execute(
-                    decreaseCounter.bind()
-                            .setUuid("doctor_id", doctorId)
-                            .setLocalDate("appointment_date", apptDate)
-            );
+            session.execute(deleteAppointmentsById.bind().setUuid("appointment_id", apptId));
+            session.execute(deleteAppointmentsByDoctor.bind()
+                    .setUuid("doctor_id", doctorId)
+                    .setLocalDate("appointment_date", apptDate)
+                    .setInstant("scheduled_time", apptTime)
+                    .setUuid("appointment_id", apptId));
+            session.execute(deleteAppointmentByDoctorStatus.bind()
+                    .setUuid("doctor_id", doctorId)
+                    .setString("status", status)
+                    .setLocalDate("appointment_date", apptDate)
+                    .setInstant("scheduled_time", apptTime)
+                    .setUuid("appointment_id", apptId));
+            session.execute(deleteAppointmentsByPatient.bind()
+                    .setUuid("patient_id", patientId)
+                    .setLocalDate("appointment_date", apptDate)
+                    .setInstant("scheduled_time", apptTime)
+                    .setUuid("appointment_id", apptId));
+            session.execute(decreaseCounter.bind()
+                    .setUuid("doctor_id", doctorId)
+                    .setLocalDate("appointment_date", apptDate));
         }
-        session.execute(
-                deleteAppointmentsByDoctorDate.bind()
-                        .setUuid("doctor_id", doctorId)
-        );
 
-        Row doc = session.execute(
-                deleteDoctors.bind()
-                        .setUuid("doctor_id", doctorId)
-        ).one();
+        session.execute(deleteAppointmentsByDoctorDate.bind().setUuid("doctor_id", doctorId));
 
-        UUID clinicId = doc != null ? doc.getUuid("clinic_id") : null;
+        Row doc = session.execute(selectDoctorById.bind().setUuid("doctor_id", doctorId)).one();
+        List<UUID> clinicIds = doc != null ? doc.getList("clinic_ids", UUID.class) : null;
 
-        Row loc = session.execute(
-                selectGeoPrefix.bind()
-                        .setUuid("doctor_id", doctorId)
-        ).one();
-        String prefix = loc != null ? loc.getString("geohash_prefix") : null;
+        ResultSet locs = session.execute(selectGeoPrefixByDoctor.bind().setUuid("doctor_id", doctorId));
 
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
-                .addStatement(SimpleStatement.newInstance(
-                        String.valueOf(deleteDoctorCredentials.bind()
-                                .setUuid("doctor_id", doctorId))
-                ))
-                .addStatement(SimpleStatement.newInstance(
-                        String.valueOf(deleteDoctors.bind()
-                                .setUuid("doctor_id", doctorId))
-                ))
-                .addStatement(SimpleStatement.newInstance(
-                        String.valueOf(deleteDoctorSchedules.bind()
-                                .setUuid("doctor_id", doctorId))
-                ));
-        if (clinicId != null) {
-            batch.addStatement(SimpleStatement.newInstance(
-                    String.valueOf(deleteDoctorClinic.bind()
-                            .setUuid("doctor_id", doctorId)
-                            .setUuid("clinic_id", clinicId))
-            ));
+                .addStatement(deleteDoctorCredentials.bind().setUuid("doctor_id", doctorId))
+                .addStatement(deleteDoctors.bind().setUuid("doctor_id", doctorId))
+                .addStatement(deleteDoctorSchedules.bind().setUuid("doctor_id", doctorId));
+
+        if (clinicIds == null || clinicIds.isEmpty()) {
+            batch.addStatement(deleteDoctorIndividual.bind().setUuid("doctor_id", doctorId));
         } else {
-            batch.addStatement(SimpleStatement.newInstance(
-                    String.valueOf(deleteDoctorIndividual.bind()
-                            .setUuid("doctor_id", doctorId))
-            ));
+            for (UUID clinicId : clinicIds) {
+                batch.addStatement(deleteDoctorClinic.bind().setUuid("clinic_id", clinicId).setUuid("doctor_id", doctorId));
+            }
         }
 
-        if (prefix != null) {
-            batch.addStatement(SimpleStatement.newInstance(
-                    String.valueOf(deleteDoctorLocation.bind()
-                            .setUuid("doctor_id", doctorId)
-                            .setString("geohash_prefix", prefix)
-                    )
-            ));
+        for (Row row : locs) {
+            batch.addStatement(deleteDoctorLocation.bind()
+                    .setString("geohash_prefix", row.getString("geohash_prefix"))
+                    .setUuid("clinic_id", row.getUuid("clinic_id"))
+                    .setUuid("doctor_id", doctorId));
         }
 
-        batch.addStatement(SimpleStatement.newInstance(
-                String.valueOf(deleteDoctorLookup.bind()
-                        .setString("email", email))
-        ));
+        batch.addStatement(deleteDoctorLookup.bind().setString("email", email));
 
         session.execute(batch.build());
     }
 
     @Override
-    public UUID findClinicId(UUID doctorId) {
+    public List<UUID> findClinicIds(UUID doctorId) {
         Row r = session.execute(selectDoctorById.bind()
                 .setUuid("doctor_id", doctorId)
         ).one();
-        return r != null ? r.getUuid("clinic_id") : null;
+        return r != null ? r.getList("clinic_ids", UUID.class) : Collections.emptyList();
     }
 
     @Override
     public Optional<Doctor> findActive(UUID doctorId) {
         Row r = session.execute(selectDoctorById.bind()
-                .setUuid("doctor_id",doctorId)
+                .setUuid("doctor_id", doctorId)
         ).one();
 
-        assert r != null;
-        if(r.getBoolean("is_active")){
+        if (r != null && r.getBoolean("is_active")) {
             return Optional.of(mapProfileRow(r));
         }
-        else {
-            return Optional.empty();
-        }
+        return Optional.empty();
     }
 
     // ── Row mappers ───────────────────────────────────────────────────────────
@@ -650,7 +676,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         return new Doctor(
                 r.getUuid("doctor_id"),
                 r.getString("name"),
-                r.getUuid("clinic_id"),
+                r.getList("clinic_ids", UUID.class),
                 DoctorType.valueOf(r.getString("type")),
                 r.getString("specialization"),
                 r.getBoolean("is_active"),
@@ -660,21 +686,29 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         );
     }
 
-    private Doctor mapLocationRow(Row r) {
+    private Doctor mapLocationRow(Row r, DoctorType type, double distance) {
+        UUID doctorId = r.getUuid("doctor_id");
+        UUID clinicId = r.getUuid("clinic_id");
+
+        List<UUID> clinicIds = (clinicId == null || NO_CLINIC_ID.equals(clinicId))
+                ? Collections.emptyList()
+                : Collections.singletonList(clinicId);
+
         return new Doctor(
-                r.getUuid("doctor_id"),
+                doctorId,
                 r.getString("name"),
-                r.getUuid("clinic_id"),
-                null,   // type not stored in location table
+                clinicIds,
+                type,
                 r.getString("specialization"),
-                r.getBoolean("is_active")
+                r.getBoolean("is_active"),
+                distance
         );
     }
 
     // ── Haversine ─────────────────────────────────────────────────────────────
 
     private double haversineKm(double lat1, double lon1, double lat2, double lon2) {
-        final double R = 6371.0; // Radius of the earth in km
+        final double R = 6371.0;
         double dLat = Math.toRadians(lat2 - lat1);
         double dLon = Math.toRadians(lon2 - lon1);
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)

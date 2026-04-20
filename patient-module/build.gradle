@@ -20,16 +20,15 @@ dependencies {
     // gRPC server
     implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
 
-    // Auth
-    implementation "org.mindrot:jbcrypt:${rootProject.ext.jbcryptVersion}"
-    implementation "io.jsonwebtoken:jjwt-api:${rootProject.ext.jjwtVersion}"
-    runtimeOnly    "io.jsonwebtoken:jjwt-impl:${rootProject.ext.jjwtVersion}"
-    runtimeOnly    "io.jsonwebtoken:jjwt-jackson:${rootProject.ext.jjwtVersion}"
+    // Redis and Cache
+    implementation "io.micronaut.redis:micronaut-redis-lettuce"
+    implementation "io.micronaut.cache:micronaut-cache-core"
 
     // Micronaut
     annotationProcessor "io.micronaut:micronaut-inject-java:${rootProject.ext.micronautVersion}"
     implementation "io.micronaut:micronaut-inject:${rootProject.ext.micronautVersion}"
     implementation "io.micronaut.cassandra:micronaut-cassandra:6.7.0"
+    implementation "io.micronaut.validation:micronaut-validation:4.12.0"
 }
 
 micronaut {
