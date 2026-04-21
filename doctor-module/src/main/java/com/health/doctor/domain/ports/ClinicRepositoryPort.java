@@ -4,11 +4,12 @@ import com.health.doctor.domain.model.Clinic;
 import com.health.doctor.domain.model.Location;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ClinicRepositoryPort {
     void save(Clinic clinic);
-    Clinic findById(UUID clinicId);
+    Optional<Clinic> findById(UUID clinicId);
     Clinic findByName(String name);
     Clinic findByLocationText(String locationText);
     Clinic findByLocationGeohash(String geohash);

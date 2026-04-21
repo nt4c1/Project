@@ -3,6 +3,7 @@ package com.health.doctor.adapters.output.persistence.repository;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.health.doctor.domain.ports.PatientLookUpPort;
+import com.health.doctor.mapper.MapperClass;
 import jakarta.inject.Singleton;
 
 import java.util.Optional;
@@ -23,11 +24,6 @@ public class PatientLookUpImpl implements PatientLookUpPort {
                 "SELECT patient_id, name, phone FROM doctor_service.patients WHERE patient_id=?",
                 patientId
         ).one();
-        if (r == null) return Optional.empty();
-        return Optional.of(new PatientSummary(
-                r.getUuid("patient_id"),
-                r.getString("name"),
-                r.getString("phone")
-        ));
+        return Optional.ofNullable(MapperClass.mapRowToPatientSummary(r));
     }
 }

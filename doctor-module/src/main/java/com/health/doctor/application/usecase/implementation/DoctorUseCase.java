@@ -158,8 +158,10 @@ public class DoctorUseCase implements DoctorInterface {
     @Override
     public List<Doctor> getDoctorsByLocationText(@NotBlank String locationText) {
         Location location = locationService.resolve(locationText);
-        // Repository will handle the precision zoom-out logic internally
-        return repo.findNearby(location.getGeohash(), location.getLatitude(), location.getLongitude());
+        List<Doctor> found = repo.findNearby(location.getGeohash(), location.getLatitude(), location.getLongitude());
+        log.info("UseCase: Found {} doctors for {}: {}", found.size(), locationText,
+                found.stream().map(d -> d.getName() + "=" + d.getDistance()).toList());
+        return found;
     }
 
     @Override
@@ -168,7 +170,7 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public void updateDoctorLocation(@NotNull UUID doctorId, @NotNull UUID clinicId, @NotBlank String locationText) {
+    public void updateDoctorLocation(@NotNull UUID doctorId,UUID clinicId, @NotBlank String locationText) {
         Location location = locationService.resolve(locationText);
         repo.updateLocation(doctorId, clinicId, location);
         natsClient.sendDoctorUpdated(doctorId.toString());

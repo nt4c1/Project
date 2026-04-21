@@ -5,6 +5,8 @@ plugins {
 }
 
 dependencies {
+    api platform("io.micronaut.platform:micronaut-parent:${rootProject.ext.micronautVersion}")
+
     api "io.grpc:grpc-stub:${rootProject.ext.grpcVersion}"
     api "io.grpc:grpc-protobuf:${rootProject.ext.grpcVersion}"
     api "com.google.protobuf:protobuf-java:3.25.8"
@@ -17,7 +19,7 @@ dependencies {
     
     // For @Singleton and @Value
     api "jakarta.inject:jakarta.inject-api:2.0.1"
-    implementation "io.micronaut:micronaut-inject:${rootProject.ext.micronautVersion}"
+    implementation "io.micronaut:micronaut-inject"
 }
 
 protobuf {

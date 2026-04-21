@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.health.doctor.mapper.MapperClass.mapRowToClinic;
+import com.health.doctor.mapper.MapperClass;
 
 @Singleton
 public class ClinicRepositoryImpl implements ClinicRepositoryPort {
@@ -63,12 +63,13 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
     }
 
     @Override
-    public Clinic findById(UUID clinicId) {
+    public Optional<Clinic> findById(UUID clinicId) {
         Row r = session.execute(
                 "SELECT * FROM doctor_service.clinics WHERE clinic_id=?",
                 clinicId
         ).one();
-        return mapRowToClinic(r);
+        if (r == null) return Optional.empty();
+        return Optional.of(MapperClass.mapRowToClinic(r));
     }
 
     @Override
@@ -77,7 +78,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 "SELECT * FROM doctor_service.clinics WHERE name=? ALLOW FILTERING",
                 name
         ).one();
-        return mapRowToClinic(r);
+        return MapperClass.mapRowToClinic(r);
     }
 
     @Override
@@ -89,7 +90,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 locationText
         ).one();
         if (lookup == null) return null;
-        return findById(lookup.getUuid("clinic_id"));
+        return findById(lookup.getUuid("clinic_id")).orElse(null);
     }
 
     @Override
@@ -102,7 +103,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 prefix
         ).one();
         if (lookup == null) return null;
-        return findById(lookup.getUuid("clinic_id"));
+        return findById(lookup.getUuid("clinic_id")).orElse(null);
     }
 
     @Override
@@ -112,13 +113,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                         "FROM doctor_service.clinics WHERE clinic_id=?",
                 clinicId
         ).one();
-        if (r == null) return null;
-        return new Location(
-                r.getDouble("latitude"),
-                r.getDouble("longitude"),
-                r.getString("geohash"),
-                r.getString("location_text")
-        );
+        return MapperClass.mapRowToLocation(r);
     }
 
     @Override
@@ -128,7 +123,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 doctorId
         ).one();
         if (r == null) return null;
-        return r.getUuid("clinic_id") != null ? findById(r.getUuid("clinic_id")) : null;
+        return r.getUuid("clinic_id") != null ? findById(r.getUuid("clinic_id")).orElse(null) : null;
     }
 
     @Override
@@ -163,8 +158,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 double cLat = r.getDouble("latitude");
                 double cLon = r.getDouble("longitude");
                 double dist = haversineKm(lat, lon, cLat, cLon);
-                // Reuse the full clinic from canonical table to get all fields
-                Clinic clinic = findById(r.getUuid("clinic_id"));
+                Clinic clinic = findById(r.getUuid("clinic_id")).orElse(null);
                 if (clinic != null && clinic.isActive()) {
                     candidates.add(new ClinicWithDistance(clinic, dist));
                 }
@@ -184,7 +178,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
         );
         
         return rs.all().stream()
-                .map(com.health.doctor.mapper.MapperClass::mapRowToClinic)
+                .map(MapperClass::mapRowToClinic)
                 .filter(c -> c.getName().toLowerCase().contains(name.toLowerCase()))
                 .skip((long) page * size)
                 .limit(size)
@@ -197,7 +191,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 "SELECT * FROM doctor_service.clinics WHERE is_deleted=false ALLOW FILTERING"
         );
         return rs.all().stream()
-                .map(com.health.doctor.mapper.MapperClass::mapRowToClinic)
+                .map(MapperClass::mapRowToClinic)
                 .filter(c -> c.getName().toLowerCase().contains(name.toLowerCase()))
                 .count();
     }

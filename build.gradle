@@ -4,7 +4,6 @@ plugins {
     id 'com.google.protobuf'       version '0.9.2' apply false
 }
 
-// Versions shared across all submodules
 ext {
     micronautVersion   = project.findProperty('micronautVersion') ?: '4.10.11'
     grpcVersion        = '1.75.0'

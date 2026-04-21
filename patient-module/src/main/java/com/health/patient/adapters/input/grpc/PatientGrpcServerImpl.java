@@ -6,14 +6,13 @@ import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.Doctor;
 import com.health.doctor.domain.model.DoctorSchedule;
 
+import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.TokenRequest;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenRequest;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.common.AppointmentMessage;
-import com.health.grpc.common.AppointmentStatus;
 import com.health.grpc.common.DoctorMessage;
-import com.health.grpc.common.DoctorType;
 import com.health.grpc.doctor.*;
 import com.health.grpc.patient.*;
 import com.health.patient.application.PatientInterface;
@@ -162,7 +161,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             ensurePatient();
             return NearbyDoctorsProxyResponse.newBuilder()
                     .addAllDoctors(doctorModule.getNearbyDoctors(request.getLocationText())
-                            .stream().map(this::mapDoctor).collect(Collectors.toList()))
+                            .stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build();
         });
     }
@@ -175,7 +174,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             ensurePatient();
             return ByLocationProxyResponse.newBuilder()
                     .addAllDoctors(doctorModule.getDoctorsByGeohash(request.getGeohashPrefix())
-                            .stream().map(this::mapDoctor).collect(Collectors.toList()))
+                            .stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build();
         });
     }
@@ -276,38 +275,10 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                             doctorModule.getPatientAppointments(
                                     UUID.fromString(request.getPatientId()),
                                     LocalDate.parse(request.getDate()))
-                                    .stream().map(this::mapAppointment)
+                                    .stream().map(MapperClass::toApptMsg)
                                     .collect(Collectors.toList()))
                     .build();
         });
-    }
-
-    // ── Mappers ───────────────────────────────────────────────────────────────
-
-    private DoctorMessage mapDoctor(Doctor d) {
-        DoctorMessage.Builder b = DoctorMessage.newBuilder()
-                .setDoctorId(d.getId().toString())
-                .setName(d.getName() != null ? d.getName() : "")
-                .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
-                .setIsActive(d.isActive());
-        if (d.getType() != null)
-            b.setType(DoctorType.valueOf(d.getType().name()));
-        return b.build();
-    }
-
-    private AppointmentMessage mapAppointment(Appointment a) {
-        AppointmentMessage.Builder b = AppointmentMessage.newBuilder()
-                .setAppointmentId(a.getId().toString())
-                .setDoctorId(a.getDoctorId().toString())
-                .setPatientId(a.getPatientId().toString())
-                .setDate(a.getAppointmentDate().toString())
-                .setTime(a.getScheduleTime().toString())
-                .setStatus(AppointmentStatus.valueOf(a.getStatus().name()));
-        if (a.getDoctorName()         != null) b.setDoctorName(a.getDoctorName());
-        if (a.getClinicName()         != null) b.setClinicName(a.getClinicName());
-        if (a.getReasonForVisit()     != null) b.setReasonForVisit(a.getReasonForVisit());
-        if (a.getCancellationReason() != null) b.setCancellationReason(a.getCancellationReason());
-        return b.build();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

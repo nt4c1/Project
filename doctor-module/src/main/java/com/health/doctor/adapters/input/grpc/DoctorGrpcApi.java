@@ -178,7 +178,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             ensureSelf(request.getDoctorId());
 
             UUID doctorId = UUID.fromString(request.getDoctorId());
-            UUID clinicId = NIL_UUID;
+            UUID clinicId = null;
             if (!request.getClinicId().isBlank()) {
                 clinicId = UUID.fromString(request.getClinicId());
             } else {

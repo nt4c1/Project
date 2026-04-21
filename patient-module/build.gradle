@@ -18,17 +18,17 @@ dependencies {
     implementation "com.datastax.oss:java-driver-query-builder:${rootProject.ext.cassandraVersion}"
 
     // gRPC server
-    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
+    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime"
 
     // Redis and Cache
     implementation "io.micronaut.redis:micronaut-redis-lettuce"
     implementation "io.micronaut.cache:micronaut-cache-core"
 
-    // Micronaut
-    annotationProcessor "io.micronaut:micronaut-inject-java:${rootProject.ext.micronautVersion}"
-    implementation "io.micronaut:micronaut-inject:${rootProject.ext.micronautVersion}"
-    implementation "io.micronaut.cassandra:micronaut-cassandra:6.7.0"
-    implementation "io.micronaut.validation:micronaut-validation:4.12.0"
+    // Micronaut core dependencies should be handled by the BOM
+    annotationProcessor "io.micronaut:micronaut-inject-java"
+    implementation "io.micronaut:micronaut-inject"
+    implementation "io.micronaut.cassandra:micronaut-cassandra"
+    implementation "io.micronaut.validation:micronaut-validation"
 }
 
 micronaut {

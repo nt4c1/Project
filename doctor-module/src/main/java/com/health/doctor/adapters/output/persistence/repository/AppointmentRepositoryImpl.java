@@ -5,6 +5,7 @@ import com.datastax.oss.driver.api.core.cql.*;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.ports.*;
+import com.health.doctor.domain.model.Clinic;
 import com.health.doctor.mapper.MapperClass;
 import jakarta.inject.Singleton;
 
@@ -66,8 +67,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 }
 
                 if (a.getClinicId() != null && !NO_CLINIC_ID.equals(a.getClinicId())) {
-                    var clinic = clinicRepo.findById(a.getClinicId());
-                    if (clinic != null) a.setClinicName(clinic.getName());
+                    Optional<Clinic> clinic = clinicRepo.findById(a.getClinicId());
+                    clinic.ifPresent(c -> a.setClinicName(c.getName()));
                 }
             });
         }
@@ -356,8 +357,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                         if (a.getClinicId() == null || NO_CLINIC_ID.equals(a.getClinicId())) {
                             a.setClinicId(d.getClinicIds().get(0));
                         }
-                        var clinic = clinicRepo.findById(a.getClinicId());
-                        if (clinic != null) a.setClinicName(clinic.getName());
+                        Optional<Clinic> clinic = clinicRepo.findById(a.getClinicId());
+                        clinic.ifPresent(c -> a.setClinicName(c.getName()));
                     }
                 });
             }

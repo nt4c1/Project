@@ -3,6 +3,7 @@ package com.health.doctor.application.usecase.implementation;
 import com.health.doctor.application.service.LocationService;
 import com.health.doctor.application.usecase.interfaces.ClinicInterface;
 import com.health.doctor.domain.exception.InvalidArgumentException;
+import com.health.doctor.domain.exception.NotFoundException;
 import com.health.doctor.domain.model.Clinic;
 import com.health.doctor.domain.model.Location;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
@@ -65,7 +66,8 @@ public class ClinicUseCase implements ClinicInterface {
 
     @Override
     public Clinic getClinicById(UUID clinicId) {
-        return repo.findById(clinicId);
+        return repo.findById(clinicId)
+                .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
     }
 
     @Override

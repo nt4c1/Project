@@ -108,6 +108,7 @@ CREATE TABLE doctors_by_individual (
 
 CREATE TABLE doctors_by_location (
                                      geohash_prefix TEXT,
+                                     geohash_prefixes LIST<TEXT>,
                                      clinic_id      UUID,
                                      doctor_id      UUID,
                                      name           TEXT,
@@ -118,6 +119,9 @@ CREATE TABLE doctors_by_location (
                                      is_active      BOOLEAN,
                                      PRIMARY KEY (geohash_prefix, clinic_id, doctor_id)
 );
+
+
+CREATE INDEX ON doctor_service.doctors_by_location (VALUES(geohash_prefixes));
 
 -- ============================================================
 --  DOCTOR SCHEDULES

@@ -6,6 +6,7 @@ import com.datastax.oss.driver.api.core.cql.*;
 import com.health.doctor.domain.exception.BookingException;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
+import com.health.doctor.mapper.MapperClass;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
@@ -108,6 +109,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         insertDoctorByLocation = session.prepare(
                 insertInto("doctor_service", "doctors_by_location")
                         .value("geohash_prefix", bindMarker("geohash_prefix"))
+                        .value("geohash_prefixes", bindMarker("geohash_prefixes"))
                         .value("clinic_id", bindMarker("clinic_id"))
                         .value("doctor_id", bindMarker("doctor_id"))
                         .value("name", bindMarker("name"))
@@ -137,13 +139,9 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         // SELECT from doctors_by_location by geohash prefix
         selectByGeohash = session.prepare(
-                selectFrom("doctor_service", "doctors_by_location")
-                        .columns("doctor_id", "clinic_id", "name", "specialization",
-                                "latitude", "longitude", "is_active")
-                        .whereColumn("geohash_prefix").isEqualTo(bindMarker("geohash_prefix"))
-                        .whereColumn("is_active").isEqualTo(bindMarker("is_active"))
-                        .allowFiltering()
-                        .build()
+                "SELECT doctor_id, clinic_id, name, specialization, latitude, longitude, is_active " +
+                        "FROM doctor_service.doctors_by_location " +
+                        "WHERE geohash_prefixes CONTAINS ? AND is_active = ? ALLOW FILTERING"
         );
 
         // SELECT from doctors_by_clinic by clinic_id
@@ -391,8 +389,13 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     public void updateLocation(UUID doctorId, UUID clinicId, Location location) {
 
         UUID effectiveClinicId = (clinicId !=null) ? clinicId : NO_CLINIC_ID;
-        String newPrefix = location.getGeohash().substring(0, 6);
+        String fullGeohash = location.getGeohash();
+//        String newPrefix = location.getGeohash().substring(0, 6);
 
+        List<String> prefixes = new ArrayList<>();
+        for (int precision = 4; precision <= 6; precision++) {
+            prefixes.add(fullGeohash.substring(0, precision));
+        }
 
         // 1. Find and delete old geohash entry for this doctor/clinic combo
         ResultSet rs = session.execute(selectGeoPrefix.bind()
@@ -419,7 +422,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         // 3. Insert new entry
         session.execute(insertDoctorByLocation.bind()
-                .setString("geohash_prefix", newPrefix)
+                .setString("geohash_prefix", fullGeohash.substring(0,6))
+                .setList("geohash_prefixes", prefixes, String.class)
                 .setUuid("clinic_id", effectiveClinicId)
                 .setUuid("doctor_id", doctorId)
                 .setString("name", name)
@@ -440,15 +444,13 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setUuid("doctor_id", doctorId)
         ).one();
         if (r == null) return Optional.empty();
-        return Optional.of(mapProfileRow(r));
+        return Optional.of(MapperClass.mapProfileRow(r));
     }
 
     @Override
     public List<Doctor> findByGeohashPrefix(String prefix) {
         ResultSet rs = session.execute(
-                selectByGeohash.bind()
-                        .setString("geohash_prefix", prefix)
-                        .setBoolean("is_active", true)
+                selectByGeohash.bind(prefix,true)
         );
 
         List<Doctor> list = new ArrayList<>();
@@ -456,21 +458,34 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             UUID doctorId = r.getUuid("doctor_id");
             Row rt = session.execute(GetDoctorType.bind().setUuid("doctor_id", doctorId)).one();
             DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
-            list.add(mapLocationRow(r, type, 0.0)); // Default distance for this method
+            list.add(MapperClass.mapLocationRow(r, type, 0.0));
         }
         return list;
     }
 
     @Override
     public List<Doctor> findNearby(String geohash, double lat, double lon) {
-        // Zoom out strategy: start at precision 6, then 5, then 4 if nothing found
+        Map<UUID, Doctor> allFound = new LinkedHashMap<>();
         for (int precision = 6; precision >= 4; precision--) {
             String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
+            log.info("Trying precision {} with prefix: {}", precision, prefix);
             List<Doctor> found = searchInPrefixAndNeighbors(prefix, lat, lon);
-            if (!found.isEmpty()) return found;
+            log.info("Found {} doctors at precision {}", found.size(), precision);
+            for (Doctor d : found) {
+                allFound.putIfAbsent(d.getId(), d);
+            }
         }
-        return Collections.emptyList();
+        List<Doctor> sorted = allFound.values().stream()
+                .sorted(Comparator.comparingDouble(Doctor::getDistance))
+                .toList();
+
+        log.info("Final sorted nearby doctors: {}", sorted.stream()
+                .map(d -> d.getName() + " (" + d.getDistance() + " km)")
+                .toList());
+
+        return sorted;
     }
+
 
     private List<Doctor> searchInPrefixAndNeighbors(String prefix, double lat, double lon) {
         GeoHash center = GeoHash.fromGeohashString(prefix);
@@ -482,32 +497,37 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             prefixes.add(neighbor.toBase32().substring(0, prefix.length()));
         }
 
+        log.info("Searching prefixes: {}",prefixes);
+
         record DoctorWithDistance(Doctor doctor, double distanceKm) {}
-        List<DoctorWithDistance> candidates = new ArrayList<>();
+
+        Map<UUID, DoctorWithDistance> seen = new LinkedHashMap<>();
 
         for (String p : prefixes) {
             ResultSet rs = session.execute(
-                    selectByGeohash.bind()
-                            .setString("geohash_prefix", p)
-                            .setBoolean("is_active", true)
+                    selectByGeohash.bind(p,true)
             );
             for (Row r : rs) {
+                UUID doctorId = r.getUuid("doctor_id");
+                if(seen.containsKey(doctorId)) continue;
+
                 double dLat = r.getDouble("latitude");
                 double dLon = r.getDouble("longitude");
                 double dist = haversineKm(lat, lon, dLat, dLon);
 
-                UUID doctorId = r.getUuid("doctor_id");
+                log.info("Doctor ID: {} | Search coords: [{}, {}] | Doctor coords: [{}, {}] | Calculated Dist: {} km",
+                        doctorId, lat, lon, dLat, dLon, dist);
+
                 Row rt = session.execute(GetDoctorType.bind().setUuid("doctor_id", doctorId)).one();
                 DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
-                candidates.add(new DoctorWithDistance(mapLocationRow(r, type, dist), dist));
+                seen.put(doctorId, new DoctorWithDistance(MapperClass.mapLocationRow(r, type, dist), dist));
             }
         }
 
-        candidates.sort(Comparator.comparingDouble(DoctorWithDistance::distanceKm));
-
-        List<Doctor> sorted = new ArrayList<>();
-        for (DoctorWithDistance d : candidates) sorted.add(d.doctor());
-        return sorted;
+        return seen.values().stream()
+                .sorted(Comparator.comparingDouble(DoctorWithDistance::distanceKm))
+                .map(DoctorWithDistance::doctor)
+                .toList();
     }
 
     @Override
@@ -665,44 +685,9 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         ).one();
 
         if (r != null && r.getBoolean("is_active")) {
-            return Optional.of(mapProfileRow(r));
+            return Optional.of(MapperClass.mapProfileRow(r));
         }
         return Optional.empty();
-    }
-
-    // ── Row mappers ───────────────────────────────────────────────────────────
-
-    private Doctor mapProfileRow(Row r) {
-        return new Doctor(
-                r.getUuid("doctor_id"),
-                r.getString("name"),
-                r.getList("clinic_ids", UUID.class),
-                DoctorType.valueOf(r.getString("type")),
-                r.getString("specialization"),
-                r.getBoolean("is_active"),
-                r.getBoolean("is_deleted"),
-                r.getInstant("created_at"),
-                r.getInstant("updated_at")
-        );
-    }
-
-    private Doctor mapLocationRow(Row r, DoctorType type, double distance) {
-        UUID doctorId = r.getUuid("doctor_id");
-        UUID clinicId = r.getUuid("clinic_id");
-
-        List<UUID> clinicIds = (clinicId == null || NO_CLINIC_ID.equals(clinicId))
-                ? Collections.emptyList()
-                : Collections.singletonList(clinicId);
-
-        return new Doctor(
-                doctorId,
-                r.getString("name"),
-                clinicIds,
-                type,
-                r.getString("specialization"),
-                r.getBoolean("is_active"),
-                distance
-        );
     }
 
     // ── Haversine ─────────────────────────────────────────────────────────────

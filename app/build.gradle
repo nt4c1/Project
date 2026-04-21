@@ -14,13 +14,13 @@ dependencies {
     implementation project(':patient-module')
 
     // gRPC Server Runtime
-    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
+    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime"
 
     // Cassandra
-    implementation "io.micronaut.cassandra:micronaut-cassandra:6.7.0"
+    implementation "io.micronaut.cassandra:micronaut-cassandra"
 
     // Annotation processors for Micronaut
-    annotationProcessor "io.micronaut:micronaut-inject-java:${rootProject.ext.micronautVersion}"
+    annotationProcessor "io.micronaut:micronaut-inject-java"
 
     // Runtime: gRPC Netty transport (needed once, here in the runnable module)
     runtimeOnly "io.grpc:grpc-netty:${rootProject.ext.grpcVersion}"
