@@ -143,7 +143,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
 
         List<Appointment> list = new ArrayList<>();
         for (Row r : rs) {
-            Appointment a = mapDoctorRow(r);
+            Appointment a = MapperClass.mapDoctorRow(r);
             a.setDoctorName(doctorName);
             a.setClinicName(clinicName);
             a.setSpecialization(specialization);
