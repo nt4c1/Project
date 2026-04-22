@@ -1,6 +1,7 @@
 package com.health.patient.application;
 
 import com.health.common.auth.JwtProvider;
+import com.health.common.utils.ValidationUtil;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.PatientMessage;
 import com.health.grpc.auth.ValidateTokenResponse;
@@ -40,16 +41,6 @@ public class PatientUseCase implements PatientInterface {
         this.natsClient  = natsClient;
     }
 
-
-    @Override
-    public UUID createPatient(@NotBlank String name, @NotBlank @Email String email, @NotBlank String phone, @NotBlank @Size(min = 6) String password) {
-        UUID   id   = UUID.randomUUID();
-        String hash = BCrypt.hashpw(password, BCrypt.gensalt());
-        repo.save(new Patient(id, name, email, phone, hash));
-        natsClient.sendPatientCreated(id.toString());
-        return id;
-    }
-
     @Cacheable("patients")
     @Override
     public Optional<Patient> getPatient(@NotNull UUID id) {
@@ -59,6 +50,13 @@ public class PatientUseCase implements PatientInterface {
     @Override
     public UUID registerPatient(@NotBlank String name, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password, @NotBlank String phone) {
         // findByEmail now uses patients_by_email lookup
+
+        if(!ValidationUtil.isValidEmail(email))
+            throw new InvalidArgumentException("Invalid email format");
+        if(!ValidationUtil.isValidPassword(password))
+            throw new InvalidArgumentException("Invalid password format");
+        if(!ValidationUtil.isValidPhone(phone))
+            throw new InvalidArgumentException("Invalid phone number format");
         if (repo.findByEmail(email).isPresent())
             throw new AlreadyExistsException("Patient already exists with email: " + email);
 

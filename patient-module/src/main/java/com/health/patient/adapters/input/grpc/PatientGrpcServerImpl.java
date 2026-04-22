@@ -80,7 +80,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             if (request.getName().isBlank()) throw new DomainException("Name is required", Status.INVALID_ARGUMENT);
             if (request.getEmail().isBlank()) throw new DomainException("Email is required", Status.INVALID_ARGUMENT);
             if (request.getPassword().length() < 6) throw new DomainException("Password must be at least 6 characters", Status.INVALID_ARGUMENT);
-            
+
             UUID id = patientUseCase.registerPatient(
                     request.getName(), request.getEmail(),
                     request.getPassword(), request.getPhone()
@@ -152,9 +152,9 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         handle(observer, () -> {
             if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
             return PatientExistsResponse.newBuilder()
-                .setExists(patientUseCase.getPatient(
-                        UUID.fromString(request.getPatientId())).isPresent())
-                .build();
+                    .setExists(patientUseCase.getPatient(
+                            UUID.fromString(request.getPatientId())).isPresent())
+                    .build();
         });
     }
 
@@ -254,7 +254,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         handle(observer, () -> {
             if (request.getAppointmentId().isBlank()) throw new DomainException("Appointment ID is required", Status.INVALID_ARGUMENT);
             if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
-            
+
             ensureSelf(request.getPatientId());
             doctorModule.cancelAppointment(
                     UUID.fromString(request.getAppointmentId()),
@@ -280,8 +280,8 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             return MyAppointmentsResponse.newBuilder()
                     .addAllAppointments(
                             doctorModule.getPatientAppointments(
-                                    UUID.fromString(request.getPatientId()),
-                                    LocalDate.parse(request.getDate()))
+                                            UUID.fromString(request.getPatientId()),
+                                            LocalDate.parse(request.getDate()))
                                     .stream().map(MapperClass::toApptMsg)
                                     .collect(Collectors.toList()))
                     .build();

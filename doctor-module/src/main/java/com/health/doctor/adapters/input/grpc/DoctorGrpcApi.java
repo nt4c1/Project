@@ -79,7 +79,6 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         handle(observer, () -> {
             if (request.getName().isBlank()) throw new DomainException("Name is required", Status.INVALID_ARGUMENT);
             if (request.getEmail().isBlank()) throw new DomainException("Email is required", Status.INVALID_ARGUMENT);
-            if (request.getPassword().length() < 6) throw new DomainException("Password must be at least 6 characters", Status.INVALID_ARGUMENT);
 
             List<UUID> clinicIds = new ArrayList<>();
             for (String raw : request.getClinicIdsList()) {

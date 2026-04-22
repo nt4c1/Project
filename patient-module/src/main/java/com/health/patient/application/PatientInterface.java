@@ -14,18 +14,13 @@ import java.util.UUID;
 public interface PatientInterface {
 
     UUID registerPatient(@NotBlank String name,
-                         @NotBlank @Email String email,
-                         @NotBlank @Size(min = 6) String password,
+                         @NotBlank  String email,
+                         @NotBlank  String password,
                          @NotBlank String phone);
-
-    UUID createPatient(@NotBlank String name,
-                       @NotBlank @Email String email,
-                       @NotBlank String phone,
-                       @NotBlank @Size(min = 6) String password);
 
     Optional<Patient> getPatient(@NotNull UUID id);
 
-    TokenResponse loginPatient(@NotBlank @Email String email,
+    TokenResponse loginPatient(@NotBlank String email,
                                @NotBlank String password);
 
     ValidateTokenResponse validatePatient(@NotBlank String token);

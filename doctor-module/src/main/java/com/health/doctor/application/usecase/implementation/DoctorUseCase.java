@@ -1,6 +1,7 @@
 package com.health.doctor.application.usecase.implementation;
 
 import com.health.common.auth.JwtProvider;
+import com.health.common.utils.ValidationUtil;
 import com.health.doctor.application.usecase.interfaces.DoctorInterface;
 import com.health.doctor.application.service.LocationService;
 import com.health.doctor.domain.exception.AlreadyExistsException;
@@ -60,11 +61,18 @@ public class DoctorUseCase implements DoctorInterface {
                              List<UUID> clinicIds,
                              @NotNull DoctorType type,
                              @NotBlank String specialization,
-                             @NotBlank @Email String email,
-                             @NotBlank @Size(min = 6) String password) {
+                             @NotBlank  String email,
+                             @NotBlank  String password) {
 
         if (credentialsRepo.findByEmail(email).isPresent())
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
+
+        if(!ValidationUtil.isValidEmail(email))
+            throw new InvalidArgumentException("Invalid email format");
+        if(!ValidationUtil.isValidPassword(password))
+            throw new InvalidArgumentException("Invalid password format");
+        if(!ValidationUtil.isValidPassword(password))
+            throw new InvalidArgumentException("Invalid password format");
 
         UUID doctorId = UUID.randomUUID();
         String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
@@ -83,11 +91,7 @@ public class DoctorUseCase implements DoctorInterface {
                     repo.updateLocation(doctorId, clinicId, local);
                 }
             }
-        } else {
-            // For individual doctors, we might want to resolve their location if they provide one
-            // but here we just ensure they have the NO_CLINIC_ID if needed in other places.
         }
-
         natsClient.sendDoctorCreated(doctorId.toString());
         return doctorId;
     }
