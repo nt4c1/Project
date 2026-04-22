@@ -14,7 +14,7 @@ dependencies {
     implementation project(':patient-module')
 
     // gRPC Server Runtime
-    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
+    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.9.0"
 
     // Cassandra
     implementation "io.micronaut.cassandra:micronaut-cassandra"
