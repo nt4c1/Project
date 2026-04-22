@@ -57,6 +57,7 @@ CREATE TABLE clinics_by_location_text (
 CREATE TABLE doctor_credentials (
                                     doctor_id     UUID PRIMARY KEY,
                                     email         TEXT,
+                                    phone         TEXT,
                                     password_hash TEXT,
                                     created_at    TIMESTAMP,
                                     updated_at    TIMESTAMP
@@ -77,6 +78,7 @@ CREATE TABLE doctors (
                          clinic_ids     LIST<UUID>,
                          type           TEXT,
                          specialization TEXT,
+                         phone          TEXT,
                          is_active      BOOLEAN,
                          is_deleted     BOOLEAN,
                          created_at     TIMESTAMP,
@@ -89,6 +91,7 @@ CREATE TABLE doctors_by_clinic (
                                    name           TEXT,
                                    type           TEXT,
                                    specialization TEXT,
+                                   phone          TEXT,
                                    is_active      BOOLEAN,
                                    is_deleted     BOOLEAN,
                                    created_at     TIMESTAMP,
@@ -101,6 +104,7 @@ CREATE TABLE doctors_by_individual (
                                        name           TEXT,
                                        type           TEXT,
                                        specialization TEXT,
+                                       phone          TEXT,
                                        is_active      BOOLEAN,
                                        is_deleted     BOOLEAN,
                                        updated_at     TIMESTAMP
@@ -113,6 +117,7 @@ CREATE TABLE doctors_by_location (
                                      doctor_id      UUID,
                                      name           TEXT,
                                      specialization TEXT,
+                                     phone          TEXT,
                                      latitude       DOUBLE,
                                      longitude      DOUBLE,
                                      location_text  TEXT,

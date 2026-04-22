@@ -91,7 +91,8 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             UUID id = doctorUseCase.createDoctor(
                     request.getName(), clinicIds, type,
                     request.getSpecialization(),
-                    request.getEmail(), request.getPassword()
+                    request.getEmail(), request.getPassword(),
+                    request.getPhone()
             );
             Doctor doctor = doctorRepo.findById(id)
                     .orElseThrow(() -> new DomainException("Doctor creation failed", Status.INTERNAL));
@@ -135,7 +136,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
 
             ensureSelf(request.getDoctorId());
             UUID doctorId = UUID.fromString(request.getDoctorId());
-            doctorUseCase.updateDoctor(doctorId, request.getEmail(), request.getPassword());
+            doctorUseCase.updateDoctor(doctorId, request.getEmail(), request.getPassword(), request.getPhone());
             
             Doctor updated = doctorRepo.findById(doctorId)
                     .orElseThrow(() -> new DomainException("Doctor not found after update", Status.NOT_FOUND));

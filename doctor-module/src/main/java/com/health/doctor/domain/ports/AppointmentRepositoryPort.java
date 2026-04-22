@@ -27,6 +27,10 @@ public interface AppointmentRepositoryPort {
 
     Optional<Appointment> findById(UUID appointmentId);
 
+    long countByDoctorAndDate(UUID doctorId, LocalDate date);
+
+    boolean existsByDoctorAndSlot(UUID doctorId, LocalDate date, LocalTime time);
+
     void decrementCount(UUID doctorId, LocalDate date);
 
     void postpone(LocalDate oldDate , Appointment updated);

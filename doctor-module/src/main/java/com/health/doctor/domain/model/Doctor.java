@@ -19,6 +19,8 @@ public class Doctor {
     private List<UUID> clinicIds;
     private DoctorType type;
     private String specialization;
+    private String phone;
+    private String nextPossibleDate;
     private boolean isActive;
     private boolean isDeleted;
     private Instant createdAt;
@@ -36,8 +38,20 @@ public class Doctor {
     }
 
     public Doctor(UUID id, String name, List<UUID> clinicIds, DoctorType type,
+                  String specialization, String phone, boolean isActive) {
+        this(id, name, clinicIds, type, specialization, isActive);
+        this.phone = phone;
+    }
+
+    public Doctor(UUID id, String name, List<UUID> clinicIds, DoctorType type,
                   String specialization, boolean isActive, double distance) {
         this(id, name, clinicIds, type, specialization, isActive);
+        this.distance = distance;
+    }
+
+    public Doctor(UUID id, String name, List<UUID> clinicIds, DoctorType type,
+                  String specialization, String phone, boolean isActive, double distance) {
+        this(id, name, clinicIds, type, specialization, phone, isActive);
         this.distance = distance;
     }
 
@@ -45,6 +59,15 @@ public class Doctor {
                   String specialization, boolean isActive,
                   boolean isDeleted, Instant createdAt, Instant updatedAt) {
         this(id, name, clinicIds, type, specialization, isActive);
+        this.isDeleted = isDeleted;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
+    public Doctor(UUID id, String name, List<UUID> clinicIds, DoctorType type,
+                  String specialization, String phone, boolean isActive,
+                  boolean isDeleted, Instant createdAt, Instant updatedAt) {
+        this(id, name, clinicIds, type, specialization, phone, isActive);
         this.isDeleted = isDeleted;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;

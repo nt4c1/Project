@@ -22,7 +22,7 @@ public interface DoctorRepositoryPort {
 
     List<Doctor> findByClinicId(UUID clinicId);
 
-    void updateDoctor(UUID doctorId, String email, String password);
+    void updateDoctor(UUID doctorId, String email, String password, String phone);
 
     void deleteDoctor(UUID doctorId, String email, String password);
 

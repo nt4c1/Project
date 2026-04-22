@@ -4,7 +4,6 @@ import com.datastax.oss.driver.api.core.cql.Row;
 import com.health.doctor.domain.model.*;
 import com.health.grpc.common.AppointmentMessage;
 import com.health.grpc.common.DoctorMessage;
-import com.health.grpc.doctor.AppointmentActionRequest;
 import com.health.doctor.domain.ports.PatientLookUpPort.PatientSummary;
 
 import java.time.Instant;
@@ -20,21 +19,17 @@ public class MapperClass {
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
     private static final UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
 
-    static {
-        System.out.println("DEBUG_STDOUT: MapperClass LOADED by JVM");
-    }
-
     public static DoctorMessage toMsg(Doctor d) {
-        System.out.println("DEBUG_STDOUT: Mapper hitting Doctor=" + d.getName() + " Dist=" + d.getDistance());
-        log.info("MAPPER_TRACE: Doctor={} Dist={} km", d.getName(), d.getDistance());
-        
         DoctorMessage.Builder b = DoctorMessage.newBuilder()
                 .setDoctorId(d.getId() != null ? d.getId().toString() : "")
                 .setName(d.getName() != null ? d.getName() : "")
                 .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
                 .setIsActive(d.isActive())
                 .setDistance(d.getDistance());
-                
+
+        if (d.getPhone() != null) b.setPhone(d.getPhone());
+        if (d.getNextPossibleDate() != null) b.setNextPossibleDate(d.getNextPossibleDate());
+
         if (d.getType() != null) {
             b.setType(com.health.grpc.common.DoctorType.valueOf(d.getType().name()));
         }
@@ -61,6 +56,7 @@ public class MapperClass {
         if (a.getClinicId()           != null) b.setClinicId(a.getClinicId().toString());
         return b.build();
     }
+
     public static Appointment mapDoctorRow(Row r) {
         if (r == null) return null;
         Appointment a = new Appointment(
@@ -111,6 +107,7 @@ public class MapperClass {
                 r.getList("clinic_ids", UUID.class),
                 DoctorType.valueOf(r.getString("type")),
                 r.getString("specialization"),
+                r.getString("phone"),
                 r.getBoolean("is_active"),
                 r.getBoolean("is_deleted"),
                 r.getInstant("created_at"),
@@ -143,7 +140,7 @@ public class MapperClass {
         java.util.List<UUID> clinicIds = (clinicId == null || NO_CLINIC_ID.equals(clinicId))
                 ? java.util.Collections.emptyList()
                 : java.util.Collections.singletonList(clinicId);
-        return new Doctor(doctorId, r.getString("name"), clinicIds, type, r.getString("specialization"), r.getBoolean("is_active"), distance);
+        return new Doctor(doctorId, r.getString("name"), clinicIds, type, r.getString("specialization"), r.getString("phone"), r.getBoolean("is_active"), distance);
     }
 
     public static PatientSummary mapRowToPatientSummary(Row r) {

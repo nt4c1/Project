@@ -55,11 +55,19 @@ public class AppointmentUseCase implements AppointmentInterface {
             throw new InvalidArgumentException("Doctor does not work on " + date.getDayOfWeek());
         }
 
-        if (time.isBefore(schedule.getStartTime()))
-            throw new InvalidArgumentException("Selected time is before doctor's opening time");
-
         if (!schedule.isValidSlot(time)) {
-            throw new InvalidArgumentException("Selected time is outside of doctor's working hours");
+            throw new InvalidArgumentException("Selected time is invalid. Please select a time within working hours that aligns with the " + schedule.getSlotDurationMinutes() + " minute slots.");
+        }
+
+        // Check if doctor is fully booked for the day
+        long currentCount = repo.countByDoctorAndDate(doctorId, date);
+        if (currentCount >= schedule.getMaxAppointmentsPerDay()) {
+            throw new InvalidArgumentException("Doctor is fully booked for " + date + ". Max appointments: " + schedule.getMaxAppointmentsPerDay());
+        }
+
+        // Check if the specific slot is already taken
+        if (repo.existsByDoctorAndSlot(doctorId, date, time)) {
+            throw new InvalidArgumentException("This appointment slot is already booked: " + time);
         }
 
         Instant now = Instant.now(Clock.system(NPT));

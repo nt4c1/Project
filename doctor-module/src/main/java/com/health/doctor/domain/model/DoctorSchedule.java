@@ -39,7 +39,12 @@ public class DoctorSchedule {
     }
 
     public boolean isValidSlot(LocalTime time) {
-        return !time.isBefore(startTime)
-                && !time.plusSeconds(slotDurationMinutes * 60L).isAfter(endTime);
+        if (time.isBefore(startTime) || time.plusMinutes(slotDurationMinutes).isAfter(endTime)) {
+            return false;
+        }
+
+        // Strict alignment check: (requestedTime - startTime) must be a multiple of slotDurationMinutes
+        long minutesFromStart = java.time.Duration.between(startTime, time).toMinutes();
+        return minutesFromStart % slotDurationMinutes == 0;
     }
 }

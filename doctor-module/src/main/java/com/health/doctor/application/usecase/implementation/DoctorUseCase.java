@@ -11,6 +11,7 @@ import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.*;
 import com.health.doctor.adapters.output.nats.DoctorNatsClient;
 import com.health.doctor.adapters.output.persistence.repository.DoctorRepositoryImpl;
+import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.common.DoctorMessage;
@@ -23,10 +24,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
 import io.micronaut.validation.Validated;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -38,6 +38,7 @@ public class DoctorUseCase implements DoctorInterface {
     private final DoctorRepositoryPort repo;
     private final CredentialsRepositoryPort credentialsRepo;
     private final ClinicRepositoryPort clinicRepo;
+    private final ScheduleRepositoryPort scheduleRepo;
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
     private final DoctorNatsClient natsClient;
@@ -45,12 +46,14 @@ public class DoctorUseCase implements DoctorInterface {
     public DoctorUseCase(DoctorRepositoryPort repo,
                          CredentialsRepositoryPort credentialsRepo,
                          ClinicRepositoryPort clinicRepo,
+                         ScheduleRepositoryPort scheduleRepo,
                          JwtProvider jwtProvider,
                          LocationService locationService,
                          DoctorNatsClient natsClient) {
         this.repo = repo;
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
+        this.scheduleRepo = scheduleRepo;
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
         this.natsClient = natsClient;
@@ -62,7 +65,8 @@ public class DoctorUseCase implements DoctorInterface {
                              @NotNull DoctorType type,
                              @NotBlank String specialization,
                              @NotBlank  String email,
-                             @NotBlank  String password) {
+                             @NotBlank  String password,
+                             @NotBlank String phone) {
 
         if (credentialsRepo.findByEmail(email).isPresent())
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
@@ -71,14 +75,12 @@ public class DoctorUseCase implements DoctorInterface {
             throw new InvalidArgumentException("Invalid email format");
         if(!ValidationUtil.isValidPassword(password))
             throw new InvalidArgumentException("Invalid password format");
-        if(!ValidationUtil.isValidPassword(password))
-            throw new InvalidArgumentException("Invalid password format");
 
         UUID doctorId = UUID.randomUUID();
         String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
         Instant now = Instant.now(Clock.system(ZoneId.of("Asia/Kathmandu")));
 
-        Doctor doctor = new Doctor(doctorId, name, clinicIds, type, specialization, true, false, now, now);
+        Doctor doctor = new Doctor(doctorId, name, clinicIds, type, specialization, phone, true, false, now, now);
         DoctorCredentials credentials = new DoctorCredentials(doctorId, email, passwordHash, now, now);
 
         credentialsRepo.save(credentials);
@@ -112,22 +114,11 @@ public class DoctorUseCase implements DoctorInterface {
 
         log.info("Doctor logged in: {} ({})", doctor.getName(), doctor.getId());
 
-        List<String> clinicIdsString = (doctor.getClinicIds() != null && !doctor.getClinicIds().isEmpty())
-                ? doctor.getClinicIds().stream().map(UUID::toString).collect(Collectors.toList())
-                : List.of(DoctorRepositoryImpl.NO_CLINIC_ID.toString());
-
         return TokenResponse.newBuilder()
                 .setSuccess(true)
                 .setAccessToken(accessToken)
                 .setRefreshToken(refreshToken)
-                .setDoctor(DoctorMessage.newBuilder()
-                        .setDoctorId(doctor.getId().toString())
-                        .setName(doctor.getName())
-                        .setType(com.health.grpc.common.DoctorType.valueOf(doctor.getType().name()))
-                        .setSpecialization(doctor.getSpecialization())
-                        .setIsActive(doctor.isActive())
-                        .addAllClinicIds(clinicIdsString)
-                )
+                .setDoctor(MapperClass.toMsg(doctor))
                 .setMessage("Login Successfully")
                 .build();
     }
@@ -165,12 +156,66 @@ public class DoctorUseCase implements DoctorInterface {
         List<Doctor> found = repo.findNearby(location.getGeohash(), location.getLatitude(), location.getLongitude());
         log.info("UseCase: Found {} doctors for {}: {}", found.size(), locationText,
                 found.stream().map(d -> d.getName() + "=" + d.getDistance()).toList());
+
+        enrichDoctorsWithScheduleStatus(found);
         return found;
     }
 
     @Override
     public List<Doctor> getDoctorsByLocationGeohash(@NotBlank String geohashPrefix) {
-        return repo.findByGeohashPrefix(geohashPrefix);
+        List<Doctor> found = repo.findByGeohashPrefix(geohashPrefix);
+        enrichDoctorsWithScheduleStatus(found);
+        return found;
+    }
+
+    private void enrichDoctorsWithScheduleStatus(List<Doctor> doctors) {
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Kathmandu"));
+        DayOfWeek currentDay = now.getDayOfWeek();
+        LocalTime currentTime = now.toLocalTime();
+
+        for (Doctor doctor : doctors) {
+            UUID clinicId = (doctor.getClinicIds() != null && !doctor.getClinicIds().isEmpty())
+                    ? doctor.getClinicIds().get(0)
+                    : DoctorRepositoryImpl.NO_CLINIC_ID;
+
+            Optional<DoctorSchedule> scheduleOpt = scheduleRepo.findByDoctorAndClinic(doctor.getId(), clinicId);
+
+            if (scheduleOpt.isPresent()) {
+                DoctorSchedule schedule = scheduleOpt.get();
+                boolean isWorkingDay = schedule.getWorkingDays().contains(currentDay);
+                boolean isWithinHours = !currentTime.isBefore(schedule.getStartTime()) && !currentTime.isAfter(schedule.getEndTime());
+
+                if (isWorkingDay && isWithinHours) {
+                    doctor.setActive(true);
+                    doctor.setNextPossibleDate("Available Today");
+                } else {
+                    doctor.setActive(false);
+                    doctor.setNextPossibleDate(calculateNextPossibleDate(schedule, now));
+                }
+            } else {
+                log.warn("No schedule found for doctor {} at clinic {}", doctor.getId(), clinicId);
+                doctor.setActive(false);
+                doctor.setNextPossibleDate("Doctor hasn't made schedule");
+            }
+        }
+    }
+
+    private String calculateNextPossibleDate(DoctorSchedule schedule, ZonedDateTime now) {
+        if (schedule.getWorkingDays() == null || schedule.getWorkingDays().isEmpty()) {
+            return "No upcoming schedule";
+        }
+
+        ZonedDateTime next = now;
+        // Check next 7 days
+        for (int i = 0; i < 7; i++) {
+            if (i > 0 || now.toLocalTime().isBefore(schedule.getStartTime())) {
+                if (schedule.getWorkingDays().contains(next.getDayOfWeek())) {
+                    return next.toLocalDate().toString() + " at " + schedule.getStartTime().toString();
+                }
+            }
+            next = next.plusDays(1);
+        }
+        return "No upcoming schedule within 7 days";
     }
 
     @Override
@@ -181,8 +226,8 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public void updateDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password) {
-        repo.updateDoctor(doctorId, email, password);
+    public void updateDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password, @NotBlank String phone) {
+        repo.updateDoctor(doctorId, email, password, phone);
         natsClient.sendDoctorUpdated(doctorId.toString());
     }
 

@@ -77,6 +77,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .value("clinic_ids", bindMarker("clinic_ids"))
                         .value("type", bindMarker("type"))
                         .value("specialization", bindMarker("specialization"))
+                        .value("phone", bindMarker("phone"))
                         .value("is_active", bindMarker("is_active"))
                         .value("is_deleted", bindMarker("is_deleted"))
                         .value("created_at", bindMarker("created_at"))
@@ -91,6 +92,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .value("name", bindMarker("name"))
                         .value("type", bindMarker("type"))
                         .value("specialization", bindMarker("specialization"))
+                        .value("phone", bindMarker("phone"))
                         .value("is_active", bindMarker("is_active"))
                         .value("is_deleted", bindMarker("is_deleted"))
                         .value("updated_at", bindMarker("updated_at"))
@@ -105,6 +107,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .value("name", bindMarker("name"))
                         .value("type", bindMarker("type"))
                         .value("specialization", bindMarker("specialization"))
+                        .value("phone", bindMarker("phone"))
                         .value("is_active", bindMarker("is_active"))
                         .value("is_deleted", bindMarker("is_deleted"))
                         .value("created_at", bindMarker("created_at"))
@@ -121,6 +124,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .value("doctor_id", bindMarker("doctor_id"))
                         .value("name", bindMarker("name"))
                         .value("specialization", bindMarker("specialization"))
+                        .value("phone", bindMarker("phone"))
                         .value("latitude", bindMarker("latitude"))
                         .value("longitude", bindMarker("longitude"))
                         .value("location_text", bindMarker("location_text"))
@@ -139,14 +143,14 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         // SELECT name/specialization/clinic_ids from doctors (for location denormalization)
         selectDoctorProfileForLocation = session.prepare(
                 selectFrom("doctor_service", "doctors")
-                        .columns("name", "specialization", "clinic_ids")
+                        .columns("name", "specialization", "phone", "clinic_ids")
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
         // SELECT from doctors_by_location by geohash prefix
         selectByGeohash = session.prepare(
-                "SELECT doctor_id, clinic_id, name, specialization, latitude, longitude, is_active " +
+                "SELECT doctor_id, clinic_id, name, specialization, phone, latitude, longitude, is_active " +
                         "FROM doctor_service.doctors_by_location " +
                         "WHERE geohash_prefixes CONTAINS ? AND is_active = ? ALLOW FILTERING"
         );
@@ -363,6 +367,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setList("clinic_ids", d.getClinicIds(), UUID.class)
                 .setString("type", d.getType().name())
                 .setString("specialization", d.getSpecialization())
+                .setString("phone", d.getPhone())
                 .setBoolean("is_active", d.isActive())
                 .setBoolean("is_deleted", false)
                 .setInstant("created_at", now)
@@ -375,6 +380,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                     .setString("name", d.getName())
                     .setString("type", d.getType().name())
                     .setString("specialization", d.getSpecialization())
+                    .setString("phone", d.getPhone())
                     .setBoolean("is_active", d.isActive())
                     .setBoolean("is_deleted", false)
                     .setInstant("updated_at", now)
@@ -387,6 +393,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setString("name", d.getName())
                         .setString("type", d.getType().name())
                         .setString("specialization", d.getSpecialization())
+                        .setString("phone", d.getPhone())
                         .setBoolean("is_active", d.isActive())
                         .setBoolean("is_deleted", false)
                         .setInstant("created_at", now)
@@ -433,6 +440,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         String name = profileRow != null ? profileRow.getString("name") : null;
         String specialization = profileRow != null ? profileRow.getString("specialization") : null;
+        String phone = profileRow != null ? profileRow.getString("phone") : null;
 
         // 3. Insert new entry
         session.execute(insertDoctorByLocation.bind()
@@ -442,6 +450,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setUuid("doctor_id", doctorId)
                 .setString("name", name)
                 .setString("specialization", specialization)
+                .setString("phone", phone)
                 .setDouble("latitude", location.getLatitude())
                 .setDouble("longitude", location.getLongitude())
                 .setString("location_text", location.getLocationText())
@@ -524,7 +533,6 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         } catch (Exception e) {
             log.warn("Redis GET failed for findNearby: {}", e.getMessage());
         }
-
         Map<UUID, Doctor> allFound = new LinkedHashMap<>();
         for (int precision = 6; precision >= 4; precision--) {
             String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
@@ -600,6 +608,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         ResultSet rs = session.execute(
                 selectByClinic.bind()
                         .setUuid("clinic_id", clinicId)
+                        .setBoolean("is_active", true)
         );
         List<Doctor> list = new ArrayList<>();
         for (Row r : rs) {
@@ -609,6 +618,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                     Collections.singletonList(clinicId),
                     DoctorType.valueOf(r.getString("type")),
                     r.getString("specialization"),
+                    r.getString("phone"),
                     r.getBoolean("is_active")
             ));
         }
@@ -616,7 +626,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     }
 
     @Override
-    public void updateDoctor(UUID doctorId, String email, String password) {
+    public void updateDoctor(UUID doctorId, String email, String password, String phone) {
         Instant now = Instant.now();
         String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(password, org.mindrot.jbcrypt.BCrypt.gensalt());
 
@@ -628,6 +638,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         session.execute(updateDoctorCredentials.bind()
                 .setString("email", email)
+                .setString("phone", phone)
                 .setString("password_hash", passwordHash)
                 .setInstant("updated_at", now)
                 .setUuid("doctor_id", doctorId)

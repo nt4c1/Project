@@ -36,14 +36,6 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
 
     @Override
     public void save(Appointment a) {
-        Row countRow = session.execute(
-                "SELECT count FROM doctor_service.appointment_count_by_doctor_date " +
-                        "WHERE doctor_id=? AND appointment_date=?",
-                a.getDoctorId(), a.getAppointmentDate()
-        ).one();
-        long current = countRow != null ? countRow.getLong("count") : 0L;
-        if (current >= 50) throw new RuntimeException("Doctor fully booked for the day");
-
         Instant now              = Instant.now();
         Instant scheduledInstant = toInstant(a.getAppointmentDate(), a.getScheduleTime());
 
@@ -212,6 +204,36 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
             if (a.getClinicId() == null) a.setClinicId(NO_CLINIC_ID);
             return a;
         });
+    }
+
+    @Override
+    public long countByDoctorAndDate(UUID doctorId, LocalDate date) {
+        Row r = session.execute(
+                "SELECT count FROM doctor_service.appointment_count_by_doctor_date " +
+                        "WHERE doctor_id=? AND appointment_date=?",
+                doctorId, date).one();
+        return r != null ? r.getLong("count") : 0L;
+    }
+
+    @Override
+    public boolean existsByDoctorAndSlot(UUID doctorId, LocalDate date, LocalTime time) {
+        Instant scheduledInstant = toInstant(date, time);
+        // We only check if ANY appointment exists at this time, regardless of status (unless it was deleted entirely from this table)
+        // Note: cancelled appointments might still be in this table depending on implementation.
+        // In current 'cancel' implementation, we UPDATE status to 'CANCELLED' in appointments_by_doctor.
+        // So we should probably check for non-cancelled ones if we want to allow re-booking a cancelled slot.
+        ResultSet rs = session.execute(
+                "SELECT status FROM doctor_service.appointments_by_doctor " +
+                        "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=?",
+                doctorId, date, scheduledInstant);
+        
+        for (Row row : rs) {
+            String status = row.getString("status");
+            if (!"CANCELLED".equals(status)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

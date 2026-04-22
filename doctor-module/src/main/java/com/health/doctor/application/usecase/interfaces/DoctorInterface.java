@@ -19,7 +19,8 @@ public interface DoctorInterface {
                       @NotNull DoctorType type,
                       @NotBlank String specialization,
                       @NotBlank @Email String email,
-                      @NotBlank @Size(min = 6) String password);
+                      @NotBlank @Size(min = 6) String password,
+                      @NotBlank String phone);
 
     TokenResponse loginDoctor(@NotBlank @Email String email, @NotBlank String password);
 
@@ -35,7 +36,8 @@ public interface DoctorInterface {
 
     void updateDoctor(@NotNull UUID doctorId,
                       @NotBlank @Email String email,
-                      @NotBlank @Size(min = 6) String password);
+                      @NotBlank @Size(min = 6) String password,
+                      @NotBlank String phone);
 
     void deleteDoctor(@NotNull UUID doctorId,
                       @NotBlank @Email String email,

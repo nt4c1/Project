@@ -21,13 +21,15 @@ enum AppointmentStatus {
 }
 
 message DoctorMessage {
-  string         doctor_id      = 1;
-  string         name           = 2;
-  DoctorType     type           = 3;
-  string         specialization = 4;
-  bool           is_active      = 5;
-  repeated string clinic_ids    = 6;
-  double distance               = 7;
+  string         doctor_id          = 1;
+  string         name               = 2;
+  DoctorType     type               = 3;
+  string         specialization     = 4;
+  bool           is_active          = 5;
+  repeated string clinic_ids        = 6;
+  double distance                   = 7;
+  string         phone              = 8;
+  string         next_possible_date = 10;
 }
 
 message ClinicMessage {
