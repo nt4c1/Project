@@ -2,6 +2,7 @@ package com.health.doctor.application.usecase.implementation;
 
 import com.health.doctor.application.usecase.interfaces.ScheduleInterface;
 import com.health.doctor.domain.exception.NotFoundException;
+import com.health.doctor.domain.exception.ScheduleException;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
@@ -12,6 +13,7 @@ import jakarta.validation.constraints.NotNull;
 import io.micronaut.validation.Validated;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -45,12 +47,28 @@ public class ScheduleUseCase implements ScheduleInterface {
                 .map(day -> DayOfWeek.valueOf(day.toUpperCase()))
                 .collect(Collectors.toSet());
 
+        if (!startTime.isBefore(endTime))
+            throw new ScheduleException("Start time must be before end time");
+
+        long availableMinutes = Duration.between(startTime, endTime).toMinutes();
+        int maxPossible = (int) (availableMinutes / slotDuration);
+
+        if (maxPossible == 0)
+            throw new ScheduleException("Time window too small for even one slot");
+
+        if (maxPerDay > maxPossible)
+            throw new ScheduleException(
+                    "Max appointments (" + maxPerDay + ") exceeds available slots (" + maxPossible + ")");
+
+
+        if (repo.findByDoctorAndClinic(doctorId, clinicId).isPresent())
+            throw new ScheduleException("Schedule already exists for this doctor and clinic");
+
         DoctorSchedule schedule = new DoctorSchedule(
                 doctorId, clinicId, days, startTime, endTime, slotDuration, maxPerDay
         );
         repo.save(schedule);
     }
-
 
     @Override
     public Optional<DoctorSchedule> getSchedule(@NotNull UUID doctorId, @NotNull UUID clinicId) {
