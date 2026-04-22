@@ -9,8 +9,6 @@ option java_multiple_files = true;
 // Shared messages for JWT-based Authentication
 
 message TokenRequest {
-  string email    = 1;
-  string password = 2;
 }
 
 message TokenResponse {
@@ -18,8 +16,7 @@ message TokenResponse {
   string        access_token  = 2;
   string        refresh_token = 3;
   string        message       = 4;
-  
-  // Optional module-specific info
+
   oneof user_info {
     DoctorMessage  doctor  = 5;
     PatientMessage patient = 6;

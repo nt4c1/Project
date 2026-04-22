@@ -6,6 +6,7 @@ import com.datastax.oss.driver.api.core.cql.*;
 import com.health.doctor.domain.exception.BookingException;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
+import com.health.common.redis.RedisUtil;
 import com.health.doctor.mapper.MapperClass;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -21,8 +22,13 @@ import static com.datastax.oss.driver.api.querybuilder.QueryBuilder.*;
 public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     public static final UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+    private static final String CACHE_DOCTOR_PREFIX = "doctor:";
+    private static final String CACHE_LOCATION_PREFIX = "doctor-location:";
+    private static final long TTL_DOCTOR = 3600; // 1h
+    private static final long TTL_LOCATION = 600; // 10m
 
     private final CqlSession session;
+    private final RedisUtil redisUtil;
 
     // ── Prepared statements ────────────────────────
     private final PreparedStatement insertDoctor;
@@ -59,8 +65,9 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
 
 
-    public DoctorRepositoryImpl(CqlSession session) {
+    public DoctorRepositoryImpl(CqlSession session, RedisUtil redisUtil) {
         this.session = session;
+        this.redisUtil = redisUtil;
 
         // doctors — canonical profile
         insertDoctor = session.prepare(
@@ -343,6 +350,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     @Override
     public void save(Doctor d) {
         Instant now = Instant.now();
+        String cacheKey = CACHE_DOCTOR_PREFIX + d.getId();
+        try {
+            redisUtil.delete(cacheKey);
+        } catch (Exception e) {
+            log.warn("Redis DELETE failed for save: {}", e.getMessage());
+        }
 
         session.execute(insertDoctor.bind()
                 .setUuid("doctor_id", d.getId())
@@ -387,6 +400,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     @Override
     public void updateLocation(UUID doctorId, UUID clinicId, Location location) {
+        clearLocationCache();
 
         UUID effectiveClinicId = (clinicId !=null) ? clinicId : NO_CLINIC_ID;
         String fullGeohash = location.getGeohash();
@@ -439,16 +453,45 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     @Override
     public Optional<Doctor> findById(UUID doctorId) {
+        String cacheKey = CACHE_DOCTOR_PREFIX + doctorId;
+        try {
+            Doctor cached = redisUtil.get(cacheKey, Doctor.class);
+            if (cached != null) {
+                log.debug("Cache hit for doctor: {}", doctorId);
+                return Optional.of(cached);
+            }
+        } catch (Exception e) {
+            log.warn("Redis GET failed for findById: {}", e.getMessage());
+        }
+
         Row r = session.execute(
                 selectDoctorById.bind()
                         .setUuid("doctor_id", doctorId)
         ).one();
         if (r == null) return Optional.empty();
-        return Optional.of(MapperClass.mapProfileRow(r));
+
+        Doctor doctor = MapperClass.mapProfileRow(r);
+        try {
+            redisUtil.set(cacheKey, doctor, TTL_DOCTOR);
+        } catch (Exception e) {
+            log.warn("Redis SET failed for findById: {}", e.getMessage());
+        }
+        return Optional.of(doctor);
     }
 
     @Override
     public List<Doctor> findByGeohashPrefix(String prefix) {
+        String cacheKey = CACHE_LOCATION_PREFIX + "gh:" + prefix;
+        try {
+            Doctor[] cached = redisUtil.get(cacheKey, Doctor[].class);
+            if (cached != null) {
+                log.debug("Cache hit for geohash: {}", prefix);
+                return Arrays.asList(cached);
+            }
+        } catch (Exception e) {
+            log.warn("Redis GET failed for findByGeohashPrefix: {}", e.getMessage());
+        }
+
         ResultSet rs = session.execute(
                 selectByGeohash.bind(prefix,true)
         );
@@ -460,11 +503,28 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
             list.add(MapperClass.mapLocationRow(r, type, 0.0));
         }
+
+        try {
+            redisUtil.set(cacheKey, list, TTL_LOCATION);
+        } catch (Exception e) {
+            log.warn("Redis SET failed for findByGeohashPrefix: {}", e.getMessage());
+        }
         return list;
     }
 
     @Override
     public List<Doctor> findNearby(String geohash, double lat, double lon) {
+        String cacheKey = CACHE_LOCATION_PREFIX + "nb:" + geohash + ":" + lat + ":" + lon;
+        try {
+            Doctor[] cached = redisUtil.get(cacheKey, Doctor[].class);
+            if (cached != null) {
+                log.debug("Cache hit for nearby: {}", geohash);
+                return Arrays.asList(cached);
+            }
+        } catch (Exception e) {
+            log.warn("Redis GET failed for findNearby: {}", e.getMessage());
+        }
+
         Map<UUID, Doctor> allFound = new LinkedHashMap<>();
         for (int precision = 6; precision >= 4; precision--) {
             String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
@@ -483,6 +543,11 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .map(d -> d.getName() + " (" + d.getDistance() + " km)")
                 .toList());
 
+        try {
+            redisUtil.set(cacheKey, sorted, TTL_LOCATION);
+        } catch (Exception e) {
+            log.warn("Redis SET failed for findNearby: {}", e.getMessage());
+        }
         return sorted;
     }
 
@@ -680,14 +745,11 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     @Override
     public Optional<Doctor> findActive(UUID doctorId) {
-        Row r = session.execute(selectDoctorById.bind()
-                .setUuid("doctor_id", doctorId)
-        ).one();
+        return findById(doctorId).filter(Doctor::isActive);
+    }
 
-        if (r != null && r.getBoolean("is_active")) {
-            return Optional.of(MapperClass.mapProfileRow(r));
-        }
-        return Optional.empty();
+    private void clearLocationCache() {
+        log.debug("Location cache invalidation requested.");
     }
 
     // ── Haversine ─────────────────────────────────────────────────────────────

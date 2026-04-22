@@ -38,6 +38,9 @@ dependencies {
     // Cassandra
     implementation "io.micronaut.cassandra:micronaut-cassandra"
 
+    // Redis
+    implementation "io.micronaut.redis:micronaut-redis-lettuce"
+
     // Annotation processors for Micronaut
     annotationProcessor "io.micronaut:micronaut-inject-java"
 

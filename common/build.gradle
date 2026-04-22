@@ -21,6 +21,12 @@ dependencies {
     api "jakarta.inject:jakarta.inject-api:2.0.1"
     annotationProcessor "io.micronaut:micronaut-inject-java"
     implementation "io.micronaut:micronaut-inject"
+
+    //Mapper
+    implementation("com.fasterxml.jackson.core:jackson-databind")
+
+    // Redis
+    api "io.lettuce:lettuce-core"
 }
 
 protobuf {

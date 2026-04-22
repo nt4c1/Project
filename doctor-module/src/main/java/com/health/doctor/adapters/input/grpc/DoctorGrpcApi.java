@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 
 
 
+import static com.health.common.auth.GrpcAuthInterceptor.*;
 import static com.health.common.auth.GrpcAuthInterceptor.ROLE_KEY;
 import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
 
@@ -532,8 +533,14 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void generateToken(TokenRequest request,
                               StreamObserver<TokenResponse> observer) {
         handle(observer, () -> {
-            TokenResponse response = doctorUseCase.loginDoctor(
-                    request.getEmail(), request.getPassword());
+            String email = EMAIL_KEY.get();
+            String password = PASSWORD_KEY.get();
+
+            if (email == null || password == null) {
+                throw new DomainException("Credentials missing from basic auth", Status.UNAUTHENTICATED);
+            }
+
+            TokenResponse response = doctorUseCase.loginDoctor(email, password);
             observer.onNext(response);
             observer.onCompleted();
         });

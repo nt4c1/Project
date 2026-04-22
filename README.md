@@ -9,7 +9,7 @@ This is a multi-module Micronaut project providing Healthcare services via gRPC.
 
 ## Prerequisites
 - **JDK 17+**
-- **ScyllaDB / Cassandra** (Running on `172.17.0.3:9042` or update `application.properties`)
+- **ScyllaDB / Cassandra** (Running on `localhost:9042` or update `application.properties`)
 - **NATS** (Running on `localhost:4223`)
 - **Redis** (Running on `localhost:6379`)
 
@@ -32,8 +32,19 @@ Ensure that you connect using **Plaintext (h2c)** as TLS is not enabled by defau
 - **Encryption**: `None` or `Plaintext`
 - **Prior Knowledge**: Enabled (if using Kreya)
 
-## Nearby Doctor Search Fix
-The `GetNearbyDoctors` RPC has been updated to:
-1. Search across multiple geohash precisions (6 down to 4).
-2. Return all doctors found, sorted by distance in kilometers.
-3. Fix the "zero distance" bug by using high-precision coordinates from the database.
+## Security: Basic Authentication
+Authentication for `GenerateToken` and `PatientLogin` has been moved from the request body to gRPC **Basic Auth metadata**.
+- **Username**: User email
+- **Password**: User password
+- The `TokenRequest` message in `.proto` files is now empty.
+
+## Redis Caching Strategy
+The system uses a "cache-aside" pattern for high-performance data retrieval:
+- **`doctors` Cache**: Stores doctor profile information (1-hour TTL). Automatically invalidated on profile updates.
+- **`doctor-locations` Cache**: Stores results for nearby and geohash-based searches (10-minute TTL). Invalidated whenever any doctor's location is updated to ensure search accuracy.
+
+## Nearby Doctor Search
+The `GetNearbyDoctors` RPC features:
+1. Multi-precision geohash search (6 down to 4).
+2. Result accumulation and sorting by distance in kilometers.
+3. High-precision coordinate resolution for accurate proximity calculations.

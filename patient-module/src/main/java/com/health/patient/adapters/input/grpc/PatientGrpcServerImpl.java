@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static com.health.common.auth.GrpcAuthInterceptor.*;
 import static com.health.common.auth.GrpcAuthInterceptor.ROLE_KEY;
 import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
 
@@ -53,9 +54,15 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     @Override
     public void patientLogin(TokenRequest request,
                              StreamObserver<TokenResponse> observer) {
-        handle(observer, () ->
-                patientUseCase.loginPatient(request.getEmail(), request.getPassword())
-        );
+        handle(observer, () -> {
+            String email = EMAIL_KEY.get();
+            String password = PASSWORD_KEY.get();
+
+            if (email == null || password == null) {
+                throw new DomainException("Credentials missing from basic auth", Status.UNAUTHENTICATED);
+            }
+            return patientUseCase.loginPatient(email, password);
+        });
     }
 
     @Override
