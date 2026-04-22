@@ -12,4 +12,6 @@ public interface CredentialsRepositoryPort {
     Optional<DoctorCredentials> findByEmail(String email);
 
     Optional<DoctorCredentials> findByDoctorId(UUID doctorId);
+
+    void updatePassword(UUID doctorId, String passwordHash);
 }

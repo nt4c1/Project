@@ -12,6 +12,8 @@ service DoctorGrpcService {
   // Auth
   rpc GenerateToken             (TokenRequest)          returns (TokenResponse);
   rpc ValidateDoctorToken      (ValidateTokenRequest)        returns (ValidateTokenResponse);
+  rpc ForgotPassword           (ForgotPasswordRequest)        returns (ForgotPasswordResponse);
+  rpc ResetPassword            (ResetPasswordRequest)         returns (ResetPasswordResponse);
 
   // Doctor management
   rpc CreateDoctor             (CreateDoctorRequest)         returns (CreateDoctorResponse);

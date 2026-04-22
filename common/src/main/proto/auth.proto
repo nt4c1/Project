@@ -40,3 +40,22 @@ message ValidateTokenResponse {
   string role    = 3;
   string message = 4;
 }
+
+message ForgotPasswordRequest {
+  string email = 1;
+}
+
+message ForgotPasswordResponse {
+  bool   success     = 1;
+  string reset_token = 2; // In real-world, this would be emailed
+  string message     = 3;
+}
+
+message ResetPasswordRequest {
+  string new_password = 1;
+}
+
+message ResetPasswordResponse {
+  bool   success = 1;
+  string message = 2;
+}

@@ -96,6 +96,14 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
     }
 
     @Override
+    public void updatePassword(UUID patientId, String passwordHash) {
+        session.execute(
+                "UPDATE doctor_service.patients SET password_hash=?, updated_at=? WHERE patient_id=?",
+                passwordHash, Instant.now(), patientId
+        );
+    }
+
+    @Override
     public void deletePatient(UUID patientId) {
         //Appointment Search
         ResultSet activeRs = session.execute(

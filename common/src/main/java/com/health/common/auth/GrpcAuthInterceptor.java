@@ -1,6 +1,7 @@
 package com.health.common.auth;
 
 import io.grpc.*;
+import io.jsonwebtoken.Claims;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
@@ -14,6 +15,7 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
 
     public static final Context.Key<String> USER_ID_KEY  = Context.key("user-id");
     public static final Context.Key<String> ROLE_KEY     = Context.key("role");
+    public static final Context.Key<String> TOKEN_TYPE_KEY = Context.key("token-type");
     public static final Context.Key<String> EMAIL_KEY    = Context.key("email");
     public static final Context.Key<String> PASSWORD_KEY = Context.key("password");
 
@@ -28,7 +30,8 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
     private static final Set<String> PUBLIC_METHODS = Set.of(
             "CreateDoctor",
             "RegisterPatient",
-            "CreateClinic"
+            "CreateClinic",
+            "ForgotPassword"
     );
 
     private final JwtProvider jwtProvider;
@@ -109,9 +112,11 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
                         .withDescription("Invalid or expired token"));
             }
 
+            Claims claims = jwtProvider.extractClaims(token);
             Context context = Context.current()
-                    .withValue(USER_ID_KEY, jwtProvider.extractUserId(token))
-                    .withValue(ROLE_KEY, jwtProvider.extractRole(token));
+                    .withValue(USER_ID_KEY, claims.get("uid", String.class))
+                    .withValue(ROLE_KEY, claims.get("role", String.class))
+                    .withValue(TOKEN_TYPE_KEY, claims.get("type", String.class));
 
             return Contexts.interceptCall(context, call, headers, next);
 

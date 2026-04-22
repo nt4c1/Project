@@ -32,6 +32,7 @@ public class JwtProvider {
         return Jwts.builder()
                 .claim("uid", userId)
                 .claim("role", role)
+                .claim("type", "access")
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + accessExpiry))
                 .signWith(key)
@@ -44,6 +45,17 @@ public class JwtProvider {
                 .claim("type", "refresh")
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + refreshExpiry))
+                .signWith(key)
+                .compact();
+    }
+
+    public String generateResetToken(String userId, String role) {
+        return Jwts.builder()
+                .claim("uid", userId)
+                .claim("role", role)
+                .claim("type", "reset")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 15 * 60 * 1000)) // 15 minutes
                 .signWith(key)
                 .compact();
     }

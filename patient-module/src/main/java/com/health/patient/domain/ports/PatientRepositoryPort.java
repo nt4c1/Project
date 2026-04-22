@@ -14,5 +14,7 @@ public interface PatientRepositoryPort {
 
     void updatePatient(UUID patientID,String email,String password);
 
+    void updatePassword(UUID patientId, String passwordHash);
+
     void deletePatient(UUID patientId);
 }

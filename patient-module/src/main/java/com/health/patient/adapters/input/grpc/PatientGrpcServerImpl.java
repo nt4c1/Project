@@ -7,10 +7,7 @@ import com.health.doctor.domain.model.Doctor;
 import com.health.doctor.domain.model.DoctorSchedule;
 
 import com.health.doctor.mapper.MapperClass;
-import com.health.grpc.auth.TokenRequest;
-import com.health.grpc.auth.TokenResponse;
-import com.health.grpc.auth.ValidateTokenRequest;
-import com.health.grpc.auth.ValidateTokenResponse;
+import com.health.grpc.auth.*;
 import com.health.grpc.common.AppointmentMessage;
 import com.health.grpc.common.DoctorMessage;
 import com.health.grpc.doctor.*;
@@ -88,6 +85,34 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
             return RegisterPatientResponse.newBuilder()
                     .setPatientId(id.toString())
                     .setMessage("Patient registered successfully")
+                    .build();
+        });
+    }
+
+    @Override
+    public void forgotPassword(ForgotPasswordRequest request,
+                               StreamObserver<ForgotPasswordResponse> observer) {
+        handle(observer, () -> {
+            if (request.getEmail().isBlank()) throw new DomainException("Email is required", Status.INVALID_ARGUMENT);
+            String token = patientUseCase.forgotPassword(request.getEmail());
+            return ForgotPasswordResponse.newBuilder()
+                    .setSuccess(true)
+                    .setResetToken(token)
+                    .setMessage("Reset token generated successfully")
+                    .build();
+        });
+    }
+
+    @Override
+    public void resetPassword(ResetPasswordRequest request,
+                              StreamObserver<ResetPasswordResponse> observer) {
+        handle(observer, () -> {
+            if (request.getNewPassword().length() < 6) throw new DomainException("Password must be at least 6 characters", Status.INVALID_ARGUMENT);
+
+            patientUseCase.resetPassword(request.getNewPassword());
+            return ResetPasswordResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Password reset successfully")
                     .build();
         });
     }

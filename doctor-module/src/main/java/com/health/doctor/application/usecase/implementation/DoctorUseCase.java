@@ -1,5 +1,6 @@
 package com.health.doctor.application.usecase.implementation;
 
+import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
 import com.health.common.utils.ValidationUtil;
 import com.health.doctor.application.usecase.interfaces.DoctorInterface;
@@ -235,5 +236,36 @@ public class DoctorUseCase implements DoctorInterface {
     public void deleteDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password) {
         repo.deleteDoctor(doctorId, email, password);
         natsClient.sendDoctorUpdated(doctorId.toString());
+    }
+
+    @Override
+    public String forgotPassword(@NotBlank @Email String email) {
+        DoctorCredentials credentials = credentialsRepo.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Doctor not found: " + email));
+        
+        return jwtProvider.generateResetToken(credentials.getDoctorId().toString(), "Doctor");
+    }
+
+    @Override
+    public void resetPassword(@NotBlank @Size(min = 6) String newPassword) {
+        String userId = GrpcAuthInterceptor.USER_ID_KEY.get();
+        String role = GrpcAuthInterceptor.ROLE_KEY.get();
+        String type = GrpcAuthInterceptor.TOKEN_TYPE_KEY.get();
+
+        if (userId == null || role == null || type == null) {
+            throw new InvalidArgumentException("Authentication context missing");
+        }
+
+        if (!"reset".equals(type)) {
+            throw new InvalidArgumentException("Invalid token type: reset token required");
+        }
+
+        if (!"Doctor".equalsIgnoreCase(role)) {
+            throw new InvalidArgumentException("Token is not for a Doctor");
+        }
+
+        String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+        credentialsRepo.updatePassword(UUID.fromString(userId), passwordHash);
+        log.info("Password reset successful for doctor: {}", userId);
     }
 }

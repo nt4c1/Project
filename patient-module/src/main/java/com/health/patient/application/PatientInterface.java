@@ -33,4 +33,8 @@ public interface PatientInterface {
                        @NotBlank @Email String email,
                        @NotBlank String password);
 
+    String forgotPassword(@NotBlank @Email String email);
+
+    void resetPassword(@NotBlank @Size(min = 6) String newPassword);
+
 }

@@ -67,4 +67,12 @@ public class CredentialsRepositoryImpl implements CredentialsRepositoryPort {
                 r.getInstant("updated_at")
         ));
     }
+
+    @Override
+    public void updatePassword(UUID doctorId, String passwordHash) {
+        session.execute(
+                "UPDATE doctor_service.doctor_credentials SET password_hash=?, updated_at=? WHERE doctor_id=?",
+                passwordHash, Instant.now(), doctorId
+        );
+    }
 }

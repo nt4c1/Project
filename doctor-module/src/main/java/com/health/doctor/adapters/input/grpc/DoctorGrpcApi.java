@@ -7,10 +7,7 @@ import com.health.doctor.domain.model.DoctorType;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
 import com.health.doctor.mapper.MapperClass;
-import com.health.grpc.auth.TokenRequest;
-import com.health.grpc.auth.TokenResponse;
-import com.health.grpc.auth.ValidateTokenRequest;
-import com.health.grpc.auth.ValidateTokenResponse;
+import com.health.grpc.auth.*;
 import com.health.grpc.common.ClinicMessage;
 import com.health.grpc.common.DoctorMessage;
 import com.health.grpc.doctor.*;
@@ -552,6 +549,36 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         handle(observer, () -> {
             ValidateTokenResponse response = doctorUseCase.validateDoctor(request.getToken());
             observer.onNext(response);
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void forgotPassword(ForgotPasswordRequest request,
+                               StreamObserver<ForgotPasswordResponse> observer) {
+        handle(observer, () -> {
+            if (request.getEmail().isBlank()) throw new DomainException("Email is required", Status.INVALID_ARGUMENT);
+            String token = doctorUseCase.forgotPassword(request.getEmail());
+            observer.onNext(ForgotPasswordResponse.newBuilder()
+                    .setSuccess(true)
+                    .setResetToken(token)
+                    .setMessage("Reset token generated successfully")
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void resetPassword(ResetPasswordRequest request,
+                              StreamObserver<ResetPasswordResponse> observer) {
+        handle(observer, () -> {
+            if (request.getNewPassword().length() < 6) throw new DomainException("Password must be at least 6 characters", Status.INVALID_ARGUMENT);
+
+            doctorUseCase.resetPassword(request.getNewPassword());
+            observer.onNext(ResetPasswordResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Password reset successfully")
+                    .build());
             observer.onCompleted();
         });
     }

@@ -14,6 +14,8 @@ service PatientGrpcService {
   rpc PatientLogin         (TokenRequest)               returns (TokenResponse);
   rpc ValidatePatientToken (ValidateTokenRequest)       returns (ValidateTokenResponse);
   rpc RegisterPatient      (RegisterPatientRequest)     returns (RegisterPatientResponse);
+  rpc ForgotPassword       (ForgotPasswordRequest)      returns (ForgotPasswordResponse);
+  rpc ResetPassword        (ResetPasswordRequest)       returns (ResetPasswordResponse);
 
   // Patient
   rpc GetPatient           (GetPatientRequest)          returns (GetPatientResponse);

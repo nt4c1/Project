@@ -1,5 +1,6 @@
 package com.health.patient.application;
 
+import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
 import com.health.common.utils.ValidationUtil;
 import com.health.grpc.auth.TokenResponse;
@@ -129,5 +130,36 @@ public class PatientUseCase implements PatientInterface {
     @Override
     public void deletePatient(@NotNull UUID patientId, @NotBlank @Email String email, @NotBlank String password) {
         repo.deletePatient(patientId);
+    }
+
+    @Override
+    public String forgotPassword(@NotBlank @Email String email) {
+        Patient patient = repo.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + email));
+        
+        return jwtProvider.generateResetToken(patient.getId().toString(), "Patient");
+    }
+
+    @Override
+    public void resetPassword(@NotBlank @Size(min = 6) String newPassword) {
+        String userId = GrpcAuthInterceptor.USER_ID_KEY.get();
+        String role = GrpcAuthInterceptor.ROLE_KEY.get();
+        String type = GrpcAuthInterceptor.TOKEN_TYPE_KEY.get();
+
+        if (userId == null || role == null || type == null) {
+            throw new InvalidArgumentException("Authentication context missing");
+        }
+
+        if (!"reset".equals(type)) {
+            throw new InvalidArgumentException("Invalid token type: reset token required");
+        }
+
+        if (!"Patient".equalsIgnoreCase(role)) {
+            throw new InvalidArgumentException("Token is not for a Patient");
+        }
+
+        String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
+        repo.updatePassword(UUID.fromString(userId), passwordHash);
+        log.info("Password reset successful for patient: {}", userId);
     }
 }
