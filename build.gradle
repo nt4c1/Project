@@ -1,7 +1,15 @@
 plugins {
-    id 'io.micronaut.application'  version '4.6.2' apply false
-    id 'io.micronaut.library'      version '4.6.2' apply false
-    id 'com.google.protobuf'       version '0.9.2' apply false
+    id 'io.micronaut.application' version '4.6.2'
+    id 'io.micronaut.library'     version '4.6.2' apply false
+    id 'com.google.protobuf'      version '0.9.2' apply false
+    id 'java'
+}
+
+group = 'com.health'
+version = '1.0-SNAPSHOT'
+
+application {
+    mainClass = 'com.health.app.Application'
 }
 
 ext {
@@ -12,6 +20,32 @@ ext {
     jbcryptVersion     = '0.4'
     geohashVersion     = '1.4.0'
     jjwtVersion        = '0.13.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform("io.micronaut.platform:micronaut-parent:${rootProject.ext.micronautVersion}")
+    implementation project(':common')
+    implementation project(':doctor-module')
+    implementation project(':patient-module')
+
+    // gRPC Server Runtime
+    implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"
+
+    // Cassandra
+    implementation "io.micronaut.cassandra:micronaut-cassandra"
+
+    // Annotation processors for Micronaut
+    annotationProcessor "io.micronaut:micronaut-inject-java"
+
+    // Runtime: gRPC Netty transport
+    runtimeOnly "io.grpc:grpc-netty:${rootProject.ext.grpcVersion}"
+
+    // Logging
+    runtimeOnly 'ch.qos.logback:logback-classic'
 }
 
 subprojects {
@@ -26,5 +60,14 @@ subprojects {
         annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
         compileOnly         "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
         compileOnly         'jakarta.annotation:jakarta.annotation-api:2.1.1'
+    }
+}
+
+micronaut {
+    runtime 'netty'
+    version "${rootProject.ext.micronautVersion}"
+    processing {
+        incremental(true)
+        annotations("com.health.*")
     }
 }

@@ -1,6 +1,5 @@
 rootProject.name = 'health-service'
 
-include ':app'
 include ':common'
 include ':doctor-module'
 include ':patient-module'

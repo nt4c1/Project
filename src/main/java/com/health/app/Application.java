@@ -7,4 +7,3 @@ public class Application {
         Micronaut.run(Application.class, args);
     }
 }
-//todo gradle clen garda purai clean bhayena
