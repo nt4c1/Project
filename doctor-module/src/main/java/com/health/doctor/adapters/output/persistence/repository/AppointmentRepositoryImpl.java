@@ -237,6 +237,23 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     }
 
     @Override
+    public boolean existsByPatientDoctorAndDate(UUID patientId, UUID doctorId, LocalDate date) {
+        ResultSet rs = session.execute(
+                "SELECT status, doctor_id FROM doctor_service.appointments_by_patient " +
+                        "WHERE patient_id=? AND appointment_date=?",
+                patientId, date);
+
+        for (Row row : rs) {
+            UUID currentDoctorId = row.getUuid("doctor_id");
+            String status = row.getString("status");
+            if (doctorId.equals(currentDoctorId) && !"CANCELLED".equals(status)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     public void updateStatus(Appointment a, String newStatus) {
         Instant now              = Instant.now();
         Instant scheduledInstant = toInstant(a.getAppointmentDate(), a.getScheduleTime());

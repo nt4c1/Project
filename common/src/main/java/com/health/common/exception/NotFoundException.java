@@ -1,4 +1,4 @@
-package com.health.patient.domain.exception;
+package com.health.common.exception;
 
 import io.grpc.Status;
 

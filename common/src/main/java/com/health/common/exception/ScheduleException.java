@@ -1,9 +1,9 @@
-package com.health.doctor.domain.exception;
+package com.health.common.exception;
 
 import io.grpc.Status;
 
 public class ScheduleException extends DomainException {
     public ScheduleException(String message) {
-        super(message, Status.INVALID_ARGUMENT);
+        super(message, Status.FAILED_PRECONDITION);
     }
 }

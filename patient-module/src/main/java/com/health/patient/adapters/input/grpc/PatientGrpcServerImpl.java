@@ -13,7 +13,7 @@ import com.health.grpc.common.DoctorMessage;
 import com.health.grpc.doctor.*;
 import com.health.grpc.patient.*;
 import com.health.patient.application.PatientInterface;
-import com.health.patient.domain.exception.DomainException;
+import com.health.common.exception.DomainException;
 import com.health.patient.domain.model.Patient;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -332,7 +332,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         try {
             observer.onNext(supplier.get());
             observer.onCompleted();
-        } catch (DomainException e) {
+        } catch (com.health.common.exception.DomainException e) {
             log.warn("Domain error: {}", e.getMessage());
             observer.onError(e.getGrpcStatus().withDescription(e.getMessage()).asRuntimeException());
         } catch (SecurityException e) {

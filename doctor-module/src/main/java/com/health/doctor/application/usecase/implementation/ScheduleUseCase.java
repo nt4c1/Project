@@ -1,8 +1,8 @@
 package com.health.doctor.application.usecase.implementation;
 
 import com.health.doctor.application.usecase.interfaces.ScheduleInterface;
-import com.health.doctor.domain.exception.NotFoundException;
-import com.health.doctor.domain.exception.ScheduleException;
+import com.health.common.exception.NotFoundException;
+import com.health.common.exception.ScheduleException;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;

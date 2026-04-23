@@ -1,8 +1,9 @@
 package com.health.doctor.application.usecase.implementation;
 
+import com.health.common.exception.NotFoundException;
 import com.health.doctor.application.usecase.interfaces.AppointmentInterface;
-import com.health.doctor.domain.exception.InvalidArgumentException;
-import com.health.doctor.domain.exception.NotFoundException;
+import com.health.common.exception.InvalidArgumentException;
+import com.health.common.exception.DomainException;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.model.DoctorSchedule;
@@ -51,6 +52,8 @@ public class AppointmentUseCase implements AppointmentInterface {
         DoctorSchedule schedule = scheduleRepo.findByDoctorAndClinic(doctorId, clinicId)
                 .orElseThrow(() -> new NotFoundException("Doctor schedule not found for doctor: " + doctorId + " at clinic: " + clinicId));
 
+
+
         if (!schedule.isWorkingDay(date.getDayOfWeek())) {
             throw new InvalidArgumentException("Doctor does not work on " + date.getDayOfWeek());
         }
@@ -63,6 +66,11 @@ public class AppointmentUseCase implements AppointmentInterface {
         long currentCount = repo.countByDoctorAndDate(doctorId, date);
         if (currentCount >= schedule.getMaxAppointmentsPerDay()) {
             throw new InvalidArgumentException("Doctor is fully booked for " + date + ". Max appointments: " + schedule.getMaxAppointmentsPerDay());
+        }
+
+        // Check if this specific patient already has an appointment with this doctor on this day
+        if (repo.existsByPatientDoctorAndDate(patientId, doctorId, date)) {
+            throw new InvalidArgumentException("You already have an appointment with this doctor on " + date);
         }
 
         // Check if the specific slot is already taken

@@ -2,12 +2,12 @@ package com.health.doctor.application.usecase.implementation;
 
 import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
+import com.health.common.exception.AlreadyExistsException;
+import com.health.common.exception.NotFoundException;
 import com.health.common.utils.ValidationUtil;
-import com.health.doctor.application.usecase.interfaces.DoctorInterface;
+import com.health.common.exception.InvalidArgumentException;
 import com.health.doctor.application.service.LocationService;
-import com.health.doctor.domain.exception.AlreadyExistsException;
-import com.health.doctor.domain.exception.InvalidArgumentException;
-import com.health.doctor.domain.exception.NotFoundException;
+import com.health.doctor.application.usecase.interfaces.DoctorInterface;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.*;
 import com.health.doctor.adapters.output.nats.DoctorNatsClient;
@@ -15,7 +15,6 @@ import com.health.doctor.adapters.output.persistence.repository.DoctorRepository
 import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
-import com.health.grpc.common.DoctorMessage;
 import com.health.grpc.doctor.DoctorActiveResponse;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.Email;
@@ -45,6 +44,7 @@ public class DoctorUseCase implements DoctorInterface {
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
     private final DoctorNatsClient natsClient;
+    private final ValidationUtil validationUtil;
 
     public DoctorUseCase(DoctorRepositoryPort repo,
                          CredentialsRepositoryPort credentialsRepo,
@@ -52,7 +52,7 @@ public class DoctorUseCase implements DoctorInterface {
                          ScheduleRepositoryPort scheduleRepo,
                          JwtProvider jwtProvider,
                          LocationService locationService,
-                         DoctorNatsClient natsClient) {
+                         DoctorNatsClient natsClient, ValidationUtil validationUtil) {
         this.repo = repo;
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
@@ -60,6 +60,7 @@ public class DoctorUseCase implements DoctorInterface {
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
         this.natsClient = natsClient;
+        this.validationUtil = validationUtil;
     }
 
     @Override
@@ -74,10 +75,10 @@ public class DoctorUseCase implements DoctorInterface {
         if (credentialsRepo.findByEmail(email).isPresent())
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
 
-        if(!ValidationUtil.isValidEmail(email))
-            throw new InvalidArgumentException("Invalid email format");
-        if(!ValidationUtil.isValidPassword(password))
-            throw new InvalidArgumentException("Invalid password format");
+        ValidationUtil.validateEmail(email);
+        ValidationUtil.validatePhone(phone);
+        ValidationUtil.validatePassword(password);
+
 
         UUID doctorId = UUID.randomUUID();
         String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());

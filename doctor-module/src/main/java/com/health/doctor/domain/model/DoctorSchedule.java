@@ -43,7 +43,7 @@ public class DoctorSchedule {
             return false;
         }
 
-        // Strict alignment check: (requestedTime - startTime) must be a multiple of slotDurationMinutes
+        // alignment check: (requestedTime - startTime) must be a multiple of slotDurationMinutes
         long minutesFromStart = java.time.Duration.between(startTime, time).toMinutes();
         return minutesFromStart % slotDurationMinutes == 0;
     }

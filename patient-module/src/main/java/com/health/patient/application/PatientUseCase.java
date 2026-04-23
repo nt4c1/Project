@@ -2,13 +2,13 @@ package com.health.patient.application;
 
 import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
+import com.health.common.exception.AlreadyExistsException;
+import com.health.common.exception.NotFoundException;
 import com.health.common.utils.ValidationUtil;
-import com.health.grpc.auth.TokenResponse;
+import com.health.common.exception.InvalidArgumentException;
 import com.health.grpc.auth.PatientMessage;
+import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
-import com.health.patient.domain.exception.AlreadyExistsException;
-import com.health.patient.domain.exception.InvalidArgumentException;
-import com.health.patient.domain.exception.NotFoundException;
 import com.health.patient.domain.model.Patient;
 import com.health.patient.domain.ports.PatientRepositoryPort;
 import jakarta.inject.Singleton;
@@ -19,8 +19,6 @@ import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
 import io.micronaut.validation.Validated;
-import io.micronaut.cache.annotation.Cacheable;
-import io.micronaut.cache.annotation.CacheInvalidate;
 
 import com.health.patient.adapters.output.nats.PatientNatsClient;
 
@@ -42,7 +40,6 @@ public class PatientUseCase implements PatientInterface {
         this.natsClient  = natsClient;
     }
 
-    @Cacheable("patients")
     @Override
     public Optional<Patient> getPatient(@NotNull UUID id) {
         return repo.findById(id);
@@ -69,7 +66,6 @@ public class PatientUseCase implements PatientInterface {
         return id;
     }
 
-    @CacheInvalidate(value = "patients", parameters = "patientId")
     @Override
     public void updatePatient(@NotNull UUID patientId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password) {
         repo.updatePatient(patientId, email, password);
@@ -126,7 +122,6 @@ public class PatientUseCase implements PatientInterface {
         }
     }
 
-    @CacheInvalidate(value = "patients", parameters = "patientId")
     @Override
     public void deletePatient(@NotNull UUID patientId, @NotBlank @Email String email, @NotBlank String password) {
         repo.deletePatient(patientId);

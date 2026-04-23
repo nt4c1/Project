@@ -2,7 +2,7 @@ package com.health.patient.adapters.output.persistence;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.*;
-import com.health.patient.domain.exception.BookingException;
+import com.health.common.exception.BookingException;
 import com.health.patient.domain.model.Patient;
 import com.health.patient.domain.ports.PatientRepositoryPort;
 import com.health.patient.mapper.Mapper;

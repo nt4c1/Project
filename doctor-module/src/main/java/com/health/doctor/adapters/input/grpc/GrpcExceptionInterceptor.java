@@ -1,6 +1,6 @@
 package com.health.doctor.adapters.input.grpc;
 
-import com.health.doctor.domain.exception.DomainException;
+import com.health.common.exception.*;
 import io.grpc.*;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -61,18 +61,6 @@ public class GrpcExceptionInterceptor implements ServerInterceptor {
             log.warn("Domain exception: {}", domainEx.getMessage());
             call.close(
                     domainEx.getGrpcStatus().withDescription(domainEx.getMessage()),
-                    headers
-            );
-        } else if (e instanceof com.health.doctor.domain.exception.NotFoundException) {
-            log.warn("Not found: {}", e.getMessage());
-            call.close(
-                    Status.NOT_FOUND.withDescription(e.getMessage()),
-                    headers
-            );
-        } else if (e instanceof com.health.doctor.domain.exception.AlreadyExistsException) {
-            log.warn("Already exists: {}", e.getMessage());
-            call.close(
-                    Status.ALREADY_EXISTS.withDescription(e.getMessage()),
                     headers
             );
         } else if (e instanceof IllegalArgumentException || e instanceof java.time.format.DateTimeParseException) {

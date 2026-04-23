@@ -2,8 +2,8 @@ package com.health.doctor.application.usecase.implementation;
 
 import com.health.doctor.application.service.LocationService;
 import com.health.doctor.application.usecase.interfaces.ClinicInterface;
-import com.health.doctor.domain.exception.InvalidArgumentException;
-import com.health.doctor.domain.exception.NotFoundException;
+import com.health.common.exception.InvalidArgumentException;
+import com.health.common.exception.NotFoundException;
 import com.health.doctor.domain.model.Clinic;
 import com.health.doctor.domain.model.Location;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;

@@ -1,6 +1,5 @@
-package com.health.doctor.domain.exception;
+package com.health.common.exception;
 
-import com.health.doctor.domain.exception.DomainException;
 import io.grpc.Status;
 
 public class InvalidArgumentException extends DomainException {

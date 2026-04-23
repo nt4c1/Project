@@ -1,7 +1,7 @@
 package com.health.doctor.adapters.input.grpc;
 
+import com.health.common.exception.DomainException;
 import com.health.doctor.application.usecase.interfaces.*;
-import com.health.doctor.domain.exception.DomainException;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.model.DoctorType;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
@@ -325,7 +325,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             }
 
             DoctorSchedule s = scheduleUseCase.getSchedule(doctorId, clinicId)
-                    .orElseThrow(() -> new com.health.doctor.domain.exception
+                    .orElseThrow(() -> new com.health.common.exception
                             .NotFoundException("No schedule for doctor: " + doctorId + (clinicId.equals(NIL_UUID) ? "" : " at clinic: " + clinicId)));
             observer.onNext(GetScheduleResponse.newBuilder()
                     .setDoctorId(s.getDoctorId().toString())
@@ -592,15 +592,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     private <T> void handle(StreamObserver<T> observer, Runnable action) {
         try {
             action.run();
-        } catch (com.health.doctor.domain.exception.NotFoundException e) {
-            log.warn("Not found error: {}", e.getMessage());
-            observer.onError(Status.NOT_FOUND
-                    .withDescription(e.getMessage()).asRuntimeException());
-        } catch (com.health.doctor.domain.exception.AlreadyExistsException e) {
-            log.warn("Already exists error: {}", e.getMessage());
-            observer.onError(Status.ALREADY_EXISTS
-                    .withDescription(e.getMessage()).asRuntimeException());
-        } catch (DomainException e) {
+        } catch (com.health.common.exception.DomainException e) {
             log.warn("Domain error: {}", e.getMessage());
             observer.onError(e.getGrpcStatus()
                     .withDescription(e.getMessage()).asRuntimeException());

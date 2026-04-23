@@ -3,7 +3,7 @@ package com.health.doctor.adapters.output.persistence.repository;
 import ch.hsr.geohash.GeoHash;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.*;
-import com.health.doctor.domain.exception.BookingException;
+import com.health.common.exception.BookingException;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
 import com.health.common.redis.RedisUtil;
