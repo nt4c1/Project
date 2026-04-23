@@ -401,6 +401,14 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 );
             }
         }
+
+        try {
+            redisUtil.set(cacheKey, d, TTL_DOCTOR);
+            log.info("Redis Set for Save");
+        }
+        catch (Exception e) {
+            log.warn("Redis SET failed for save: {}", e.getMessage());
+        }
     }
 
     // ── Location ──────────────────────────────────────────────────────────────
@@ -553,6 +561,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         try {
             redisUtil.set(cacheKey, sorted, TTL_LOCATION);
+            log.info("Redis Set for NearBy");
         } catch (Exception e) {
             log.warn("Redis SET failed for findNearby: {}", e.getMessage());
         }
@@ -761,8 +770,17 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     private void clearLocationCache() {
         log.debug("Location cache invalidation requested.");
+        try {
+            Set<String> keys = redisUtil.getKeys(CACHE_LOCATION_PREFIX + "*");
+            if (keys != null && !keys.isEmpty()) {
+                for (String key : keys) {
+                    redisUtil.delete(key);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to clear location cache: {}", e.getMessage());
+        }
     }
-
     // ── Haversine ─────────────────────────────────────────────────────────────
 
     private double haversineKm(double lat1, double lon1, double lat2, double lon2) {

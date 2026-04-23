@@ -5,6 +5,9 @@ import io.lettuce.core.SetArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
 import jakarta.inject.Singleton;
 
+import java.util.HashSet;
+import java.util.Set;
+
 @Singleton
 public class RedisUtilImpl implements RedisUtil {
 
@@ -35,6 +38,15 @@ public class RedisUtilImpl implements RedisUtil {
             return objectMapper.readValue(value, type);
         } catch (Exception e) {
             throw new RuntimeException("Redis GET failed", e);
+        }
+    }
+
+    @Override
+    public Set<String> getKeys(String pattern) {
+        try {
+            return new HashSet<>(connection.sync().keys(pattern));
+        } catch (Exception e) {
+            throw new RuntimeException("Redis KEYS failed", e);
         }
     }
 

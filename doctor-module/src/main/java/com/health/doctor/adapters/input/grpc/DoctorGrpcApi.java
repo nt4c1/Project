@@ -118,8 +118,12 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                              StreamObserver<DoctorActiveResponse> observer) {
         handle(observer, () -> {
             if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
-            boolean active = doctorRepo.findActive(UUID.fromString(request.getDoctorId())).isPresent();
-            observer.onNext(DoctorActiveResponse.newBuilder().setExists(active).build());
+
+            UUID doctorId = UUID.fromString(request.getDoctorId());
+            UUID clinicId = request.getClinicId().isBlank() ? null : UUID.fromString(request.getClinicId());
+            
+            DoctorActiveResponse response = doctorUseCase.isDoctorActive(doctorId, clinicId);
+            observer.onNext(response);
             observer.onCompleted();
         });
     }
@@ -600,14 +604,21 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             log.warn("Domain error: {}", e.getMessage());
             observer.onError(e.getGrpcStatus()
                     .withDescription(e.getMessage()).asRuntimeException());
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid argument: {}", e.getMessage());
+        } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
+            log.warn("Invalid argument or parse error: {}", e.getMessage());
             observer.onError(Status.INVALID_ARGUMENT
-                    .withDescription(e.getMessage()).asRuntimeException());
+                    .withDescription("Invalid format: " + e.getMessage()).asRuntimeException());
+        } catch (jakarta.validation.ConstraintViolationException e) {
+            log.warn("Validation error: {}", e.getMessage());
+            String desc = e.getConstraintViolations().stream()
+                    .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                    .collect(Collectors.joining(", "));
+            observer.onError(Status.INVALID_ARGUMENT
+                    .withDescription("Validation failed: " + desc).asRuntimeException());
         } catch (Exception e) {
             log.error("Unexpected gRPC error", e);
             observer.onError(Status.INTERNAL
-                    .withDescription("Internal error: " + e.getMessage())
+                    .withDescription("Internal error: " + e.getClass().getSimpleName() + " - " + e.getMessage())
                     .asRuntimeException());
         }
     }

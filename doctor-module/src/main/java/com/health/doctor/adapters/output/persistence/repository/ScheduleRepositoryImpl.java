@@ -1,18 +1,15 @@
 package com.health.doctor.adapters.output.persistence.repository;
 
 import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import jakarta.inject.Singleton;
 
-import javax.print.Doc;
 import java.time.DayOfWeek;
 import java.time.Instant;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Singleton
@@ -88,5 +85,34 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
                 r.getInt("max_appointments_day")
         );
         return Optional.of(schedule);
+    }
+
+    @Override
+    public List<DoctorSchedule> findByDoctors(List<UUID> doctorIds) {
+        if (doctorIds == null || doctorIds.isEmpty()) return Collections.emptyList();
+
+        ResultSet rs = session.execute(
+                "SELECT * FROM doctor_service.doctor_schedules WHERE doctor_id IN ?",
+                doctorIds
+        );
+
+        List<DoctorSchedule> list = new ArrayList<>();
+        for (Row r : rs) {
+            Set<DayOfWeek> days = Objects.requireNonNull(r.getSet("working_days", String.class))
+                    .stream()
+                    .map(DayOfWeek::valueOf)
+                    .collect(Collectors.toSet());
+
+            list.add(new DoctorSchedule(
+                    r.getUuid("doctor_id"),
+                    r.getUuid("clinic_id"),
+                    days,
+                    r.getLocalTime("start_time"),
+                    r.getLocalTime("end_time"),
+                    r.getInt("slot_duration_minutes"),
+                    r.getInt("max_appointments_day")
+            ));
+        }
+        return list;
     }
 }

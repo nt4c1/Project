@@ -7,6 +7,10 @@ services:
     command: --smp 1 --memory 512M --overprovisioned 1
     volumes:
       - scylla_data:/var/lib/scylla
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
       interval: 30s
@@ -16,12 +20,16 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7.4
+    image: redis:7.4-alpine
     container_name: redis
     ports:
       - "6380:6379"
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -30,12 +38,16 @@ services:
     restart: unless-stopped
 
   nats:
-    image: nats:2.10
+    image: nats:2.10-alpine
     container_name: nats
     ports:
       - "4223:4222"
       - "8223:8222"
     command: --jetstream --http_port 8222
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     healthcheck:
       test: ["CMD", "nats-server", "--help"]
       interval: 10s

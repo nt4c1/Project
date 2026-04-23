@@ -47,4 +47,6 @@ public interface DoctorInterface {
 
     void resetPassword(@NotBlank @Size(min = 6) String newPassword);
 
+    com.health.grpc.doctor.DoctorActiveResponse isDoctorActive(@NotNull java.util.UUID doctorId, java.util.UUID clinicId);
+
 }

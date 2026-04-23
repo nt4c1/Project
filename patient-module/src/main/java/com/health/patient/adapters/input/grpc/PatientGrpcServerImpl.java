@@ -338,9 +338,18 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
         } catch (SecurityException e) {
             log.warn("Security: {}", e.getMessage());
             observer.onError(Status.PERMISSION_DENIED.withDescription(e.getMessage()).asRuntimeException());
+        } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
+            log.warn("Invalid argument or parse error: {}", e.getMessage());
+            observer.onError(Status.INVALID_ARGUMENT.withDescription("Invalid format: " + e.getMessage()).asRuntimeException());
+        } catch (jakarta.validation.ConstraintViolationException e) {
+            log.warn("Validation error: {}", e.getMessage());
+            String desc = e.getConstraintViolations().stream()
+                    .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                    .collect(Collectors.joining(", "));
+            observer.onError(Status.INVALID_ARGUMENT.withDescription("Validation failed: " + desc).asRuntimeException());
         } catch (Exception e) {
             log.error("Unexpected error", e);
-            observer.onError(Status.INTERNAL.withDescription("Internal error").asRuntimeException());
+            observer.onError(Status.INTERNAL.withDescription("Internal error: " + e.getClass().getSimpleName() + " - " + e.getMessage()).asRuntimeException());
         }
     }
 }

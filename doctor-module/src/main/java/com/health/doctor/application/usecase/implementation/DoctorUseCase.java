@@ -16,6 +16,7 @@ import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.common.DoctorMessage;
+import com.health.grpc.doctor.DoctorActiveResponse;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -27,6 +28,7 @@ import io.micronaut.validation.Validated;
 
 import java.time.*;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -170,19 +172,20 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     private void enrichDoctorsWithScheduleStatus(List<Doctor> doctors) {
+        if (doctors == null || doctors.isEmpty()) return;
+
+        List<UUID> doctorIds = doctors.stream().map(Doctor::getId).collect(Collectors.toList());
+        Map<UUID, DoctorSchedule> scheduleMap = scheduleRepo.findByDoctors(doctorIds).stream()
+                .collect(Collectors.toMap(DoctorSchedule::getDoctorId, s -> s));
+
         ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Kathmandu"));
         DayOfWeek currentDay = now.getDayOfWeek();
         LocalTime currentTime = now.toLocalTime();
 
         for (Doctor doctor : doctors) {
-            UUID clinicId = (doctor.getClinicIds() != null && !doctor.getClinicIds().isEmpty())
-                    ? doctor.getClinicIds().get(0)
-                    : DoctorRepositoryImpl.NO_CLINIC_ID;
+            DoctorSchedule schedule = scheduleMap.get(doctor.getId());
 
-            Optional<DoctorSchedule> scheduleOpt = scheduleRepo.findByDoctorAndClinic(doctor.getId(), clinicId);
-
-            if (scheduleOpt.isPresent()) {
-                DoctorSchedule schedule = scheduleOpt.get();
+            if (schedule != null) {
                 boolean isWorkingDay = schedule.getWorkingDays().contains(currentDay);
                 boolean isWithinHours = !currentTime.isBefore(schedule.getStartTime()) && !currentTime.isAfter(schedule.getEndTime());
 
@@ -194,7 +197,7 @@ public class DoctorUseCase implements DoctorInterface {
                     doctor.setNextPossibleDate(calculateNextPossibleDate(schedule, now));
                 }
             } else {
-                log.warn("No schedule found for doctor {} at clinic {}", doctor.getId(), clinicId);
+                log.warn("No schedule found for doctor {}", doctor.getId());
                 doctor.setActive(false);
                 doctor.setNextPossibleDate("Doctor hasn't made schedule");
             }
@@ -267,5 +270,32 @@ public class DoctorUseCase implements DoctorInterface {
         String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
         credentialsRepo.updatePassword(UUID.fromString(userId), passwordHash);
         log.info("Password reset successful for doctor: {}", userId);
+    }
+
+    @Override
+    public DoctorActiveResponse isDoctorActive(@NotNull UUID doctorId, UUID clinicId) {
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Kathmandu"));
+        DayOfWeek currentDay = now.getDayOfWeek();
+
+        Optional<DoctorSchedule> scheduleOpt;
+        if (clinicId != null && !DoctorRepositoryImpl.NO_CLINIC_ID.equals(clinicId)) {
+            scheduleOpt = scheduleRepo.findByDoctorAndClinic(doctorId, clinicId);
+        } else {
+            scheduleOpt = scheduleRepo.findByDoctors(List.of(doctorId)).stream().findFirst();
+        }
+
+        if (scheduleOpt.isPresent()) {
+            DoctorSchedule schedule = scheduleOpt.get();
+            boolean isActive = schedule.getWorkingDays().contains(currentDay);
+            return DoctorActiveResponse.newBuilder()
+                    .setIsActive(isActive)
+                    .setMessage(isActive ? "Doctor is active today (" + currentDay + ")" : "Doctor is not active today (" + currentDay + ")")
+                    .build();
+        } else {
+            return DoctorActiveResponse.newBuilder()
+                    .setIsActive(false)
+                    .setMessage("no schedule is for this doctor")
+                    .build();
+        }
     }
 }

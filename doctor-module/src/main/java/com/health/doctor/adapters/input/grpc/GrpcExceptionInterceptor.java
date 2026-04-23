@@ -75,16 +75,25 @@ public class GrpcExceptionInterceptor implements ServerInterceptor {
                     Status.ALREADY_EXISTS.withDescription(e.getMessage()),
                     headers
             );
-        } else if (e instanceof IllegalArgumentException) {
-            log.warn("Invalid argument: {}", e.getMessage());
+        } else if (e instanceof IllegalArgumentException || e instanceof java.time.format.DateTimeParseException) {
+            log.warn("Invalid argument or parse error: {}", e.getMessage());
             call.close(
-                    Status.INVALID_ARGUMENT.withDescription(e.getMessage()),
+                    Status.INVALID_ARGUMENT.withDescription("Invalid format: " + e.getMessage()),
+                    headers
+            );
+        } else if (e instanceof jakarta.validation.ConstraintViolationException cve) {
+            log.warn("Validation error: {}", e.getMessage());
+            String desc = cve.getConstraintViolations().stream()
+                    .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                    .collect(java.util.stream.Collectors.joining(", "));
+            call.close(
+                    Status.INVALID_ARGUMENT.withDescription("Validation failed: " + desc),
                     headers
             );
         } else {
             log.error("Unexpected error in gRPC call", e);
             call.close(
-                    Status.INTERNAL.withDescription("Internal server error: " + e.getMessage()),
+                    Status.INTERNAL.withDescription("Internal server error: " + e.getClass().getSimpleName() + " - " + e.getMessage()),
                     headers
             );
         }

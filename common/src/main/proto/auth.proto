@@ -47,7 +47,7 @@ message ForgotPasswordRequest {
 
 message ForgotPasswordResponse {
   bool   success     = 1;
-  string reset_token = 2; // In real-world, this would be emailed
+  string reset_token = 2;
   string message     = 3;
 }
 

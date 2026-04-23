@@ -6,6 +6,8 @@ public interface RedisUtil {
 
     <T> T get(String key, Class<T> type);
 
+    java.util.Set<String> getKeys(String pattern);
+
     void delete(String key);
 
     boolean exists(String key);

@@ -62,8 +62,15 @@ message CreateDoctorResponse { DoctorMessage doctor = 1; string message = 2; }
 message GetDoctorRequest  { string doctor_id = 1; }
 message GetDoctorResponse { DoctorMessage doctor = 1; }
 
-message DoctorActiveRequest  { string doctor_id = 1; }
-message DoctorActiveResponse { bool exists = 1; }
+message DoctorActiveRequest {
+  string doctor_id = 1;
+  string clinic_id = 2;
+}
+
+message DoctorActiveResponse {
+  bool   is_active = 1;
+  string message   = 2;
+}
 
 message UpdateLocationRequest  { string doctor_id = 1; string clinic_id = 2; string location_text = 3; }
 message UpdateLocationResponse { bool success = 1; string message = 2; }
