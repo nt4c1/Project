@@ -4,6 +4,7 @@ import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
 import com.health.common.exception.AlreadyExistsException;
 import com.health.common.exception.NotFoundException;
+import com.health.common.utils.DateTimeUtils;
 import com.health.common.utils.ValidationUtil;
 import com.health.common.exception.InvalidArgumentException;
 import com.health.doctor.application.service.LocationService;
@@ -44,7 +45,6 @@ public class DoctorUseCase implements DoctorInterface {
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
     private final DoctorNatsClient natsClient;
-    private final ValidationUtil validationUtil;
 
     public DoctorUseCase(DoctorRepositoryPort repo,
                          CredentialsRepositoryPort credentialsRepo,
@@ -52,7 +52,7 @@ public class DoctorUseCase implements DoctorInterface {
                          ScheduleRepositoryPort scheduleRepo,
                          JwtProvider jwtProvider,
                          LocationService locationService,
-                         DoctorNatsClient natsClient, ValidationUtil validationUtil) {
+                         DoctorNatsClient natsClient) {
         this.repo = repo;
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
@@ -60,7 +60,6 @@ public class DoctorUseCase implements DoctorInterface {
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
         this.natsClient = natsClient;
-        this.validationUtil = validationUtil;
     }
 
     @Override
@@ -82,7 +81,7 @@ public class DoctorUseCase implements DoctorInterface {
 
         UUID doctorId = UUID.randomUUID();
         String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-        Instant now = Instant.now(Clock.system(ZoneId.of("Asia/Kathmandu")));
+        Instant now = DateTimeUtils.now().toInstant();
 
         Doctor doctor = new Doctor(doctorId, name, clinicIds, type, specialization, phone, true, false, now, now);
         DoctorCredentials credentials = new DoctorCredentials(doctorId, email, passwordHash, now, now);
@@ -103,7 +102,7 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public TokenResponse loginDoctor(@NotBlank @Email String email, @NotBlank String password) {
+    public TokenResponse loginDoctor(@NotBlank String email, @NotBlank String password) {
         DoctorCredentials credentials = credentialsRepo.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Doctor not found: " + email));
 
@@ -158,9 +157,6 @@ public class DoctorUseCase implements DoctorInterface {
     public List<Doctor> getDoctorsByLocationText(@NotBlank String locationText) {
         Location location = locationService.resolve(locationText);
         List<Doctor> found = repo.findNearby(location.getGeohash(), location.getLatitude(), location.getLongitude());
-        log.info("UseCase: Found {} doctors for {}: {}", found.size(), locationText,
-                found.stream().map(d -> d.getName() + "=" + d.getDistance()).toList());
-
         enrichDoctorsWithScheduleStatus(found);
         return found;
     }
@@ -175,11 +171,11 @@ public class DoctorUseCase implements DoctorInterface {
     private void enrichDoctorsWithScheduleStatus(List<Doctor> doctors) {
         if (doctors == null || doctors.isEmpty()) return;
 
-        List<UUID> doctorIds = doctors.stream().map(Doctor::getId).collect(Collectors.toList());
+        List<UUID> doctorIds = doctors.stream().map(Doctor::getId).toList();
         Map<UUID, DoctorSchedule> scheduleMap = scheduleRepo.findByDoctors(doctorIds).stream()
-                .collect(Collectors.toMap(DoctorSchedule::getDoctorId, s -> s));
+                .collect(Collectors.toMap(DoctorSchedule::getDoctorId, s -> s, (s1, s2) -> s1));
 
-        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Kathmandu"));
+        ZonedDateTime now = DateTimeUtils.now();
         DayOfWeek currentDay = now.getDayOfWeek();
         LocalTime currentTime = now.toLocalTime();
 
@@ -198,7 +194,6 @@ public class DoctorUseCase implements DoctorInterface {
                     doctor.setNextPossibleDate(calculateNextPossibleDate(schedule, now));
                 }
             } else {
-                log.warn("No schedule found for doctor {}", doctor.getId());
                 doctor.setActive(false);
                 doctor.setNextPossibleDate("Doctor hasn't made schedule");
             }
@@ -211,7 +206,6 @@ public class DoctorUseCase implements DoctorInterface {
         }
 
         ZonedDateTime next = now;
-        // Check next 7 days
         for (int i = 0; i < 7; i++) {
             if (i > 0 || now.toLocalTime().isBefore(schedule.getStartTime())) {
                 if (schedule.getWorkingDays().contains(next.getDayOfWeek())) {
@@ -275,7 +269,7 @@ public class DoctorUseCase implements DoctorInterface {
 
     @Override
     public DoctorActiveResponse isDoctorActive(@NotNull UUID doctorId, UUID clinicId) {
-        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Kathmandu"));
+        ZonedDateTime now = DateTimeUtils.now();
         DayOfWeek currentDay = now.getDayOfWeek();
 
         Optional<DoctorSchedule> scheduleOpt;

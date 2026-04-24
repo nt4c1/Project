@@ -30,7 +30,6 @@ import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
 
 @Slf4j
 @GrpcService
-@Singleton
 public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBase {
 
     private final AppointmentInterface      appointmentsUseCase;

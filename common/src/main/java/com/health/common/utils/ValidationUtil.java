@@ -1,22 +1,19 @@
 package com.health.common.utils;
 
-import jakarta.inject.Singleton;
-
 import java.util.regex.Pattern;
 
-@Singleton
-public class ValidationUtil {
+public final class ValidationUtil {
 
     private static final Pattern EMAIL_PATTERN = 
-        Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+        Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", Pattern.CASE_INSENSITIVE);
 
-    // Validates 10-digit numbers or international format starts with +
     private static final Pattern PHONE_PATTERN = 
         Pattern.compile("^(\\+\\d{1,3}[- ]?)?\\d{10}$");
 
-    // Min 8 chars, at least one uppercase, one lowercase, one digit, and one special character
     private static final Pattern PASSWORD_PATTERN = 
         Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$");
+
+    private ValidationUtil() {}
 
     public static boolean isValidEmail(String email) {
         return email != null && EMAIL_PATTERN.matcher(email).matches();
@@ -32,13 +29,13 @@ public class ValidationUtil {
 
     public static void validateEmail(String email) {
         if (!isValidEmail(email)) {
-            throw new IllegalArgumentException("Invalid email format");
+            throw new IllegalArgumentException("Invalid email format: " + email);
         }
     }
 
     public static void validatePhone(String phone) {
         if (!isValidPhone(phone)) {
-            throw new IllegalArgumentException("Invalid phone number format (use 10 digits or +countryCode(- or space)number)");
+            throw new IllegalArgumentException("Invalid phone number format (use 10 digits or +countryCode(- or space)number): " + phone);
         }
     }
 

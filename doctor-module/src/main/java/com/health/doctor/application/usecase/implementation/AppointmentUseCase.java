@@ -48,11 +48,23 @@ public class AppointmentUseCase implements AppointmentInterface {
                                    @NotNull @FutureOrPresent LocalDate date,
                                    @NotNull LocalTime time,
                                    @NotBlank String reasonForVisit) {
+
+        // Trigger all database checks in parallel
+        java.util.concurrent.CompletableFuture<Optional<DoctorSchedule>> scheduleFuture = 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> scheduleRepo.findByDoctorAndClinic(doctorId, clinicId));
         
-        DoctorSchedule schedule = scheduleRepo.findByDoctorAndClinic(doctorId, clinicId)
+        java.util.concurrent.CompletableFuture<Long> countFuture = 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> repo.countByDoctorAndDate(doctorId, date));
+        
+        java.util.concurrent.CompletableFuture<Boolean> patientExistsFuture = 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> repo.existsByPatientDoctorAndDate(patientId, doctorId, date));
+        
+        java.util.concurrent.CompletableFuture<Boolean> slotTakenFuture = 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> repo.existsByDoctorAndSlot(doctorId, date, time));
+
+        // Join all futures
+        DoctorSchedule schedule = scheduleFuture.join()
                 .orElseThrow(() -> new NotFoundException("Doctor schedule not found for doctor: " + doctorId + " at clinic: " + clinicId));
-
-
 
         if (!schedule.isWorkingDay(date.getDayOfWeek())) {
             throw new InvalidArgumentException("Doctor does not work on " + date.getDayOfWeek());
@@ -62,19 +74,15 @@ public class AppointmentUseCase implements AppointmentInterface {
             throw new InvalidArgumentException("Selected time is invalid. Please select a time within working hours that aligns with the " + schedule.getSlotDurationMinutes() + " minute slots.");
         }
 
-        // Check if doctor is fully booked for the day
-        long currentCount = repo.countByDoctorAndDate(doctorId, date);
-        if (currentCount >= schedule.getMaxAppointmentsPerDay()) {
+        if (countFuture.join() >= schedule.getMaxAppointmentsPerDay()) {
             throw new InvalidArgumentException("Doctor is fully booked for " + date + ". Max appointments: " + schedule.getMaxAppointmentsPerDay());
         }
 
-        // Check if this specific patient already has an appointment with this doctor on this day
-        if (repo.existsByPatientDoctorAndDate(patientId, doctorId, date)) {
+        if (patientExistsFuture.join()) {
             throw new InvalidArgumentException("You already have an appointment with this doctor on " + date);
         }
 
-        // Check if the specific slot is already taken
-        if (repo.existsByDoctorAndSlot(doctorId, date, time)) {
+        if (slotTakenFuture.join()) {
             throw new InvalidArgumentException("This appointment slot is already booked: " + time);
         }
 

@@ -18,11 +18,11 @@ public interface DoctorInterface {
                       List<UUID> clinicIds,
                       @NotNull DoctorType type,
                       @NotBlank String specialization,
-                      @NotBlank @Email String email,
-                      @NotBlank @Size(min = 6) String password,
+                      @NotBlank String email,
+                      @NotBlank String password,
                       @NotBlank String phone);
 
-    TokenResponse loginDoctor(@NotBlank @Email String email, @NotBlank String password);
+    TokenResponse loginDoctor(@NotBlank String email, @NotBlank String password);
 
     ValidateTokenResponse validateDoctor(@NotBlank String token);
 
@@ -35,17 +35,17 @@ public interface DoctorInterface {
     void updateDoctorLocation(@NotNull UUID doctorId,UUID clinicId, @NotBlank String locationText);
 
     void updateDoctor(@NotNull UUID doctorId,
-                      @NotBlank @Email String email,
-                      @NotBlank @Size(min = 6) String password,
+                      @NotBlank String email,
+                      @NotBlank String password,
                       @NotBlank String phone);
 
     void deleteDoctor(@NotNull UUID doctorId,
-                      @NotBlank @Email String email,
-                      @NotBlank @Size(min = 6) String password);
+                      @NotBlank  String email,
+                      @NotBlank  String password);
 
-    String forgotPassword(@NotBlank @Email String email);
+    String forgotPassword(@NotBlank  String email);
 
-    void resetPassword(@NotBlank @Size(min = 6) String newPassword);
+    void resetPassword(@NotBlank String newPassword);
 
     com.health.grpc.doctor.DoctorActiveResponse isDoctorActive(@NotNull java.util.UUID doctorId, java.util.UUID clinicId);
 

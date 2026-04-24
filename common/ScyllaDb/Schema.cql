@@ -116,6 +116,7 @@ CREATE TABLE doctors_by_location (
                                      clinic_id      UUID,
                                      doctor_id      UUID,
                                      name           TEXT,
+                                     type           TEXT,
                                      specialization TEXT,
                                      phone          TEXT,
                                      latitude       DOUBLE,
@@ -273,6 +274,24 @@ CREATE TABLE appointments_by_patient (
                                          cancellation_reason TEXT,
                                          PRIMARY KEY ((patient_id, appointment_date), scheduled_time, appointment_id)
 ) WITH CLUSTERING ORDER BY (scheduled_time ASC, appointment_id ASC)
+   AND default_time_to_live = 15552000;
+
+-- Patient appointment history (all dates)
+CREATE TABLE appointments_by_patient_all (
+                                         patient_id       UUID,
+                                         appointment_date DATE,
+                                         scheduled_time   TIMESTAMP,
+                                         appointment_id   UUID,
+                                         doctor_id        UUID,
+                                         clinic_id        UUID,
+                                         doctor_name      TEXT,
+                                         clinic_name      TEXT,
+                                         specialization   TEXT,
+                                         status           TEXT,
+                                         reason_for_visit TEXT,
+                                         cancellation_reason TEXT,
+                                         PRIMARY KEY (patient_id, appointment_date, scheduled_time, appointment_id)
+) WITH CLUSTERING ORDER BY (appointment_date DESC, scheduled_time DESC, appointment_id ASC)
    AND default_time_to_live = 15552000;
 
 -- ============================================================

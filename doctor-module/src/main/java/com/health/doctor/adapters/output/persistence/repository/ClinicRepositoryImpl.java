@@ -2,6 +2,7 @@ package com.health.doctor.adapters.output.persistence.repository;
 
 import ch.hsr.geohash.GeoHash;
 import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.health.doctor.domain.model.Clinic;
@@ -19,9 +20,59 @@ import com.health.doctor.mapper.MapperClass;
 public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     private final CqlSession session;
+    private final PreparedStatement insertClinic;
+    private final PreparedStatement insertClinicByGeohash;
+    private final PreparedStatement insertClinicByLocationText;
+    private final PreparedStatement selectClinicById;
+    private final PreparedStatement selectClinicByName;
+    private final PreparedStatement selectIdByLocationText;
+    private final PreparedStatement selectIdByGeohash;
+    private final PreparedStatement selectByGeohash;
+    private final PreparedStatement selectClinicFromDoctorsByClinic;
+    private final PreparedStatement selectAllClinics;
 
     public ClinicRepositoryImpl(CqlSession session) {
         this.session = session;
+        this.insertClinic = session.prepare(
+                "INSERT INTO doctor_service.clinics " +
+                        "(clinic_id, name, latitude, longitude, geohash, location_text, " +
+                        " is_active, is_deleted, created_at, updated_at) " +
+                        "VALUES (?,?,?,?,?,?,?,?,?,?) IF NOT EXISTS"
+        );
+        this.insertClinicByGeohash = session.prepare(
+                "INSERT INTO doctor_service.clinics_by_geohash " +
+                        "(geohash, clinic_id, name, latitude, longitude, is_active, is_deleted) " +
+                        "VALUES (?,?,?,?,?,?,?)"
+        );
+        this.insertClinicByLocationText = session.prepare(
+                "INSERT INTO doctor_service.clinics_by_location_text " +
+                        "(location_text, clinic_id, name, is_active, is_deleted) " +
+                        "VALUES (?,?,?,?,?)"
+        );
+        this.selectClinicById = session.prepare(
+                "SELECT * FROM doctor_service.clinics WHERE clinic_id=?"
+        );
+        this.selectClinicByName = session.prepare(
+                "SELECT * FROM doctor_service.clinics WHERE name=? ALLOW FILTERING"
+        );
+        this.selectIdByLocationText = session.prepare(
+                "SELECT clinic_id FROM doctor_service.clinics_by_location_text " +
+                        "WHERE location_text=? LIMIT 1"
+        );
+        this.selectIdByGeohash = session.prepare(
+                "SELECT clinic_id FROM doctor_service.clinics_by_geohash " +
+                        "WHERE geohash=? LIMIT 1"
+        );
+        this.selectByGeohash = session.prepare(
+                "SELECT clinic_id, name, latitude, longitude, is_active " +
+                        "FROM doctor_service.clinics_by_geohash WHERE geohash=?"
+        );
+        this.selectClinicFromDoctorsByClinic = session.prepare(
+                "SELECT clinic_id, doctor_id FROM doctor_service.doctors_by_clinic WHERE doctor_id=?"
+        );
+        this.selectAllClinics = session.prepare(
+                "SELECT * FROM doctor_service.clinics WHERE is_deleted=false ALLOW FILTERING"
+        );
     }
 
     @Override
@@ -33,62 +84,43 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 : l.getGeohash();
 
         // clinics — canonical row
-        session.execute(
-                "INSERT INTO doctor_service.clinics " +
-                        "(clinic_id, name, latitude, longitude, geohash, location_text, " +
-                        " is_active, is_deleted, created_at, updated_at) " +
-                        "VALUES (?,?,?,?,?,?,?,?,?,?) IF NOT EXISTS",
+        session.execute(insertClinic.bind(
                 c.getId(), c.getName(),
                 l.getLatitude(), l.getLongitude(),
                 l.getGeohash(), l.getLocationText(),
                 c.isActive(), false, now, now
-        );
+        ));
 
-        // clinics_by_geohash — replaces secondary index on geohash
-        session.execute(
-                "INSERT INTO doctor_service.clinics_by_geohash " +
-                        "(geohash, clinic_id, name, latitude, longitude, is_active, is_deleted) " +
-                        "VALUES (?,?,?,?,?,?,?)",
+        // clinics_by_geohash
+        session.execute(insertClinicByGeohash.bind(
                 prefix, c.getId(), c.getName(),
                 l.getLatitude(), l.getLongitude(), c.isActive(), false
-        );
+        ));
 
-        // clinics_by_location_text — replaces secondary index on location_text
-        session.execute(
-                "INSERT INTO doctor_service.clinics_by_location_text " +
-                        "(location_text, clinic_id, name, is_active, is_deleted) " +
-                        "VALUES (?,?,?,?,?)",
+        // clinics_by_location_text
+        session.execute(insertClinicByLocationText.bind(
                 l.getLocationText(), c.getId(), c.getName(), c.isActive(), false
-        );
+        ));
     }
 
     @Override
     public Optional<Clinic> findById(UUID clinicId) {
-        Row r = session.execute(
-                "SELECT * FROM doctor_service.clinics WHERE clinic_id=?",
-                clinicId
-        ).one();
+        Row r = session.execute(selectClinicById.bind(clinicId)).one();
         if (r == null) return Optional.empty();
         return Optional.of(MapperClass.mapRowToClinic(r));
     }
 
     @Override
     public Clinic findByName(String name) {
-        Row r = session.execute(
-                "SELECT * FROM doctor_service.clinics WHERE name=? ALLOW FILTERING",
-                name
-        ).one();
+        Row r = session.execute(selectClinicByName.bind(name)).one();
+        if (r == null) return null;
         return MapperClass.mapRowToClinic(r);
     }
 
     @Override
     public Clinic findByLocationText(String locationText) {
-        // Use lookup table — O(1) partition read, no scatter-gather
-        Row lookup = session.execute(
-                "SELECT clinic_id FROM doctor_service.clinics_by_location_text " +
-                        "WHERE location_text=? LIMIT 1",
-                locationText
-        ).one();
+        // Use lookup table
+        Row lookup = session.execute(selectIdByLocationText.bind(locationText)).one();
         if (lookup == null) return null;
         return findById(lookup.getUuid("clinic_id")).orElse(null);
     }
@@ -96,32 +128,22 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
     @Override
     public Clinic findByLocationGeohash(String geohash) {
         String prefix = geohash.length() >= 6 ? geohash.substring(0, 6) : geohash;
-        // Use lookup table — O(1) partition read
-        Row lookup = session.execute(
-                "SELECT clinic_id FROM doctor_service.clinics_by_geohash " +
-                        "WHERE geohash=? LIMIT 1",
-                prefix
-        ).one();
+        // Use lookup table
+        Row lookup = session.execute(selectIdByGeohash.bind(prefix)).one();
         if (lookup == null) return null;
         return findById(lookup.getUuid("clinic_id")).orElse(null);
     }
 
     @Override
     public Location getLocation(UUID clinicId) {
-        Row r = session.execute(
-                "SELECT latitude, longitude, geohash, location_text " +
-                        "FROM doctor_service.clinics WHERE clinic_id=?",
-                clinicId
-        ).one();
+        Row r = session.execute(selectClinicById.bind(clinicId)).one();
+        if (r == null) return null;
         return MapperClass.mapRowToLocation(r);
     }
 
     @Override
     public Clinic findDoctorAndClinic(UUID doctorId) {
-        Row r = session.execute(
-                "SELECT clinic_id, doctor_id FROM doctor_service.doctors_by_clinic WHERE doctor_id=?",
-                doctorId
-        ).one();
+        Row r = session.execute(selectClinicFromDoctorsByClinic.bind(doctorId)).one();
         if (r == null) return null;
         return r.getUuid("clinic_id") != null ? findById(r.getUuid("clinic_id")).orElse(null) : null;
     }
@@ -149,11 +171,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
         List<ClinicWithDistance> candidates = new ArrayList<>();
 
         for (String p : prefixes) {
-            ResultSet rs = session.execute(
-                    "SELECT clinic_id, name, latitude, longitude, is_active " +
-                            "FROM doctor_service.clinics_by_geohash WHERE geohash=?",
-                    p
-            );
+            ResultSet rs = session.execute(selectByGeohash.bind(p));
             for (Row r : rs) {
                 double cLat = r.getDouble("latitude");
                 double cLon = r.getDouble("longitude");
@@ -171,11 +189,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     @Override
     public List<Clinic> searchByName(String name, int page, int size) {
-        String query = "SELECT * FROM doctor_service.clinics WHERE name LIKE ? ALLOW FILTERING";
-
-        ResultSet rs = session.execute(
-                "SELECT * FROM doctor_service.clinics WHERE is_deleted=false ALLOW FILTERING"
-        );
+        ResultSet rs = session.execute(selectAllClinics.bind());
         
         return rs.all().stream()
                 .map(MapperClass::mapRowToClinic)
@@ -187,9 +201,7 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     @Override
     public long countByName(String name) {
-        ResultSet rs = session.execute(
-                "SELECT * FROM doctor_service.clinics WHERE is_deleted=false ALLOW FILTERING"
-        );
+        ResultSet rs = session.execute(selectAllClinics.bind());
         return rs.all().stream()
                 .map(MapperClass::mapRowToClinic)
                 .filter(c -> c.getName().toLowerCase().contains(name.toLowerCase()))

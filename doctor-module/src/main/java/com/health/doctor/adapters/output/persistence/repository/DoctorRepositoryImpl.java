@@ -4,6 +4,7 @@ import ch.hsr.geohash.GeoHash;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.*;
 import com.health.common.exception.BookingException;
+import com.health.common.utils.DateTimeUtils;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
 import com.health.common.redis.RedisUtil;
@@ -59,7 +60,6 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final PreparedStatement deleteDoctorClinic;
     private final PreparedStatement deleteDoctorIndividual;
     private final PreparedStatement deleteDoctorSchedules;
-    private final PreparedStatement GetDoctorType;
     private final PreparedStatement selectGeoPrefixByDoctor;
     // ─────────────────────────────────────────────
 
@@ -123,6 +123,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .value("clinic_id", bindMarker("clinic_id"))
                         .value("doctor_id", bindMarker("doctor_id"))
                         .value("name", bindMarker("name"))
+                        .value("type", bindMarker("type"))
                         .value("specialization", bindMarker("specialization"))
                         .value("phone", bindMarker("phone"))
                         .value("latitude", bindMarker("latitude"))
@@ -143,14 +144,14 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         // SELECT name/specialization/clinic_ids from doctors (for location denormalization)
         selectDoctorProfileForLocation = session.prepare(
                 selectFrom("doctor_service", "doctors")
-                        .columns("name", "specialization", "phone", "clinic_ids")
+                        .columns("name", "type", "specialization", "phone", "clinic_ids")
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
         // SELECT from doctors_by_location by geohash prefix
         selectByGeohash = session.prepare(
-                "SELECT doctor_id, clinic_id, name, specialization, phone, latitude, longitude, is_active " +
+                "SELECT doctor_id, clinic_id, name, type, specialization, phone, latitude, longitude, is_active " +
                         "FROM doctor_service.doctors_by_location " +
                         "WHERE geohash_prefixes CONTAINS ? AND is_active = ? ALLOW FILTERING"
         );
@@ -187,6 +188,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         updateDoctorCredentials = session.prepare(
                 update("doctor_service", "doctor_credentials")
                         .setColumn("email", bindMarker("email"))
+                        .setColumn("phone", bindMarker("phone"))
                         .setColumn("password_hash", bindMarker("password_hash"))
                         .setColumn("updated_at", bindMarker("updated_at"))
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
@@ -329,14 +331,6 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .allowFiltering()
                         .build()
         );
-        
-        //GET Doctor Type
-        GetDoctorType = session.prepare(
-                selectFrom("doctor_service", "doctors")
-                        .column("type")
-                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
-                        .build()
-        );
 
         //For Delete
         selectGeoPrefixByDoctor = session.prepare(
@@ -355,27 +349,23 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     public void save(Doctor d) {
         Instant now = Instant.now();
         String cacheKey = CACHE_DOCTOR_PREFIX + d.getId();
-        try {
-            redisUtil.delete(cacheKey);
-        } catch (Exception e) {
-            log.warn("Redis DELETE failed for save: {}", e.getMessage());
-        }
+        redisUtil.deleteAsync(cacheKey);
 
-        session.execute(insertDoctor.bind()
-                .setUuid("doctor_id", d.getId())
-                .setString("name", d.getName())
-                .setList("clinic_ids", d.getClinicIds(), UUID.class)
-                .setString("type", d.getType().name())
-                .setString("specialization", d.getSpecialization())
-                .setString("phone", d.getPhone())
-                .setBoolean("is_active", d.isActive())
-                .setBoolean("is_deleted", false)
-                .setInstant("created_at", now)
-                .setInstant("updated_at", now)
-        );
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(insertDoctor.bind()
+                        .setUuid("doctor_id", d.getId())
+                        .setString("name", d.getName())
+                        .setList("clinic_ids", d.getClinicIds(), UUID.class)
+                        .setString("type", d.getType().name())
+                        .setString("specialization", d.getSpecialization())
+                        .setString("phone", d.getPhone())
+                        .setBoolean("is_active", d.isActive())
+                        .setBoolean("is_deleted", false)
+                        .setInstant("created_at", now)
+                        .setInstant("updated_at", now));
 
         if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
-            session.execute(insertDoctorByIndividual.bind()
+            batch.addStatement(insertDoctorByIndividual.bind()
                     .setUuid("doctor_id", d.getId())
                     .setString("name", d.getName())
                     .setString("type", d.getType().name())
@@ -383,11 +373,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                     .setString("phone", d.getPhone())
                     .setBoolean("is_active", d.isActive())
                     .setBoolean("is_deleted", false)
-                    .setInstant("updated_at", now)
-            );
+                    .setInstant("updated_at", now));
         } else {
             for (UUID clinicId : d.getClinicIds()) {
-                session.execute(insertDoctorByClinic.bind()
+                batch.addStatement(insertDoctorByClinic.bind()
                         .setUuid("clinic_id", clinicId)
                         .setUuid("doctor_id", d.getId())
                         .setString("name", d.getName())
@@ -397,18 +386,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setBoolean("is_active", d.isActive())
                         .setBoolean("is_deleted", false)
                         .setInstant("created_at", now)
-                        .setInstant("updated_at", now)
-                );
+                        .setInstant("updated_at", now));
             }
         }
 
-        try {
-            redisUtil.set(cacheKey, d, TTL_DOCTOR);
-            log.info("Redis Set for Save");
-        }
-        catch (Exception e) {
-            log.warn("Redis SET failed for save: {}", e.getMessage());
-        }
+        session.execute(batch.build());
+        redisUtil.setAsync(cacheKey, d, TTL_DOCTOR);
     }
 
     // ── Location ──────────────────────────────────────────────────────────────
@@ -419,7 +402,6 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         UUID effectiveClinicId = (clinicId !=null) ? clinicId : NO_CLINIC_ID;
         String fullGeohash = location.getGeohash();
-//        String newPrefix = location.getGeohash().substring(0, 6);
 
         List<String> prefixes = new ArrayList<>();
         for (int precision = 4; precision <= 6; precision++) {
@@ -431,14 +413,17 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setUuid("doctor_id", doctorId)
                 .setUuid("clinic_id", effectiveClinicId));
         
+        BatchStatementBuilder deleteBatch = BatchStatement.builder(DefaultBatchType.LOGGED);
+        boolean hasOld = false;
         for (Row row : rs) {
             String oldPrefix = row.getString("geohash_prefix");
-            // If the prefix changed (or just to be safe), delete the old row
-            session.execute(deleteDoctorLocation.bind()
+            deleteBatch.addStatement(deleteDoctorLocation.bind()
                     .setString("geohash_prefix", oldPrefix)
                     .setUuid("clinic_id", effectiveClinicId)
                     .setUuid("doctor_id", doctorId));
+            hasOld = true;
         }
+        if (hasOld) session.execute(deleteBatch.build());
 
         // 2. Fetch profile info for denormalization
         Row profileRow = session.execute(
@@ -446,9 +431,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setUuid("doctor_id", doctorId)
         ).one();
 
-        String name = profileRow != null ? profileRow.getString("name") : null;
-        String specialization = profileRow != null ? profileRow.getString("specialization") : null;
-        String phone = profileRow != null ? profileRow.getString("phone") : null;
+        if (profileRow == null) {
+            log.warn("Cannot update location: doctor profile not found for {}", doctorId);
+            return;
+        }
 
         // 3. Insert new entry
         session.execute(insertDoctorByLocation.bind()
@@ -456,16 +442,22 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setList("geohash_prefixes", prefixes, String.class)
                 .setUuid("clinic_id", effectiveClinicId)
                 .setUuid("doctor_id", doctorId)
-                .setString("name", name)
-                .setString("specialization", specialization)
-                .setString("phone", phone)
+                .setString("name", profileRow.getString("name"))
+                .setString("type", profileRow.getString("type"))
+                .setString("specialization", profileRow.getString("specialization"))
+                .setString("phone", profileRow.getString("phone"))
                 .setDouble("latitude", location.getLatitude())
                 .setDouble("longitude", location.getLongitude())
                 .setString("location_text", location.getLocationText())
                 .setBoolean("is_active", true)
         );
-    }
 
+        String cacheKey = CACHE_LOCATION_PREFIX + "nb:" + fullGeohash + ":" + location.getLatitude() + ":" + location.getLongitude();
+        redisUtil.setAsync(cacheKey, location, TTL_LOCATION);
+        log.info("Location updated for doctor {}", doctorId);
+
+    }
+    
     // ── Reads ─────────────────────────────────────────────────────────────────
 
     @Override
@@ -473,10 +465,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         String cacheKey = CACHE_DOCTOR_PREFIX + doctorId;
         try {
             Doctor cached = redisUtil.get(cacheKey, Doctor.class);
-            if (cached != null) {
-                log.debug("Cache hit for doctor: {}", doctorId);
-                return Optional.of(cached);
-            }
+            if (cached != null) return Optional.of(cached);
         } catch (Exception e) {
             log.warn("Redis GET failed for findById: {}", e.getMessage());
         }
@@ -485,14 +474,11 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 selectDoctorById.bind()
                         .setUuid("doctor_id", doctorId)
         ).one();
+        log.debug("Database hit for findById: {}", doctorId);
         if (r == null) return Optional.empty();
 
         Doctor doctor = MapperClass.mapProfileRow(r);
-        try {
-            redisUtil.set(cacheKey, doctor, TTL_DOCTOR);
-        } catch (Exception e) {
-            log.warn("Redis SET failed for findById: {}", e.getMessage());
-        }
+        redisUtil.setAsync(cacheKey, doctor, TTL_DOCTOR);
         return Optional.of(doctor);
     }
 
@@ -501,10 +487,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         String cacheKey = CACHE_LOCATION_PREFIX + "gh:" + prefix;
         try {
             Doctor[] cached = redisUtil.get(cacheKey, Doctor[].class);
-            if (cached != null) {
-                log.debug("Cache hit for geohash: {}", prefix);
-                return Arrays.asList(cached);
-            }
+            if (cached != null) return Arrays.asList(cached);
         } catch (Exception e) {
             log.warn("Redis GET failed for findByGeohashPrefix: {}", e.getMessage());
         }
@@ -515,17 +498,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         List<Doctor> list = new ArrayList<>();
         for (Row r : rs) {
-            UUID doctorId = r.getUuid("doctor_id");
-            Row rt = session.execute(GetDoctorType.bind().setUuid("doctor_id", doctorId)).one();
-            DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
+            String typeStr = r.getString("type");
+            DoctorType type = typeStr != null ? DoctorType.valueOf(typeStr) : null;
             list.add(MapperClass.mapLocationRow(r, type, 0.0));
         }
 
-        try {
-            redisUtil.set(cacheKey, list, TTL_LOCATION);
-        } catch (Exception e) {
-            log.warn("Redis SET failed for findByGeohashPrefix: {}", e.getMessage());
-        }
+        redisUtil.setAsync(cacheKey, list, TTL_LOCATION);
         return list;
     }
 
@@ -534,19 +512,15 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         String cacheKey = CACHE_LOCATION_PREFIX + "nb:" + geohash + ":" + lat + ":" + lon;
         try {
             Doctor[] cached = redisUtil.get(cacheKey, Doctor[].class);
-            if (cached != null) {
-                log.debug("Cache hit for nearby: {}", geohash);
-                return Arrays.asList(cached);
-            }
+            if (cached != null) return Arrays.asList(cached);
         } catch (Exception e) {
             log.warn("Redis GET failed for findNearby: {}", e.getMessage());
         }
+
         Map<UUID, Doctor> allFound = new LinkedHashMap<>();
         for (int precision = 6; precision >= 4; precision--) {
             String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
-            log.info("Trying precision {} with prefix: {}", precision, prefix);
             List<Doctor> found = searchInPrefixAndNeighbors(prefix, lat, lon);
-            log.info("Found {} doctors at precision {}", found.size(), precision);
             for (Doctor d : found) {
                 allFound.putIfAbsent(d.getId(), d);
             }
@@ -555,16 +529,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .sorted(Comparator.comparingDouble(Doctor::getDistance))
                 .toList();
 
-        log.info("Final sorted nearby doctors: {}", sorted.stream()
-                .map(d -> d.getName() + " (" + d.getDistance() + " km)")
-                .toList());
-
-        try {
-            redisUtil.set(cacheKey, sorted, TTL_LOCATION);
-            log.info("Redis Set for NearBy");
-        } catch (Exception e) {
-            log.warn("Redis SET failed for findNearby: {}", e.getMessage());
-        }
+        redisUtil.setAsync(cacheKey, sorted, TTL_LOCATION);
         return sorted;
     }
 
@@ -579,10 +544,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             prefixes.add(neighbor.toBase32().substring(0, prefix.length()));
         }
 
-        log.info("Searching prefixes: {}",prefixes);
-
         record DoctorWithDistance(Doctor doctor, double distanceKm) {}
-
         Map<UUID, DoctorWithDistance> seen = new LinkedHashMap<>();
 
         for (String p : prefixes) {
@@ -597,11 +559,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 double dLon = r.getDouble("longitude");
                 double dist = haversineKm(lat, lon, dLat, dLon);
 
-                log.info("Doctor ID: {} | Search coords: [{}, {}] | Doctor coords: [{}, {}] | Calculated Dist: {} km",
-                        doctorId, lat, lon, dLat, dLon, dist);
-
-                Row rt = session.execute(GetDoctorType.bind().setUuid("doctor_id", doctorId)).one();
-                DoctorType type = (rt != null) ? DoctorType.valueOf(rt.getString("type")) : null;
+                String typeStr = r.getString("type");
+                DoctorType type = typeStr != null ? DoctorType.valueOf(typeStr) : null;
                 seen.put(doctorId, new DoctorWithDistance(MapperClass.mapLocationRow(r, type, dist), dist));
             }
         }
@@ -636,6 +595,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     @Override
     public void updateDoctor(UUID doctorId, String email, String password, String phone) {
+        redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
         Instant now = Instant.now();
         String passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(password, org.mindrot.jbcrypt.BCrypt.gensalt());
 
@@ -645,38 +605,37 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         ).one();
         List<UUID> clinicIds = r != null ? r.getList("clinic_ids", UUID.class) : null;
 
-        session.execute(updateDoctorCredentials.bind()
-                .setString("email", email)
-                .setString("phone", phone)
-                .setString("password_hash", passwordHash)
-                .setInstant("updated_at", now)
-                .setUuid("doctor_id", doctorId)
-        );
-
-        session.execute(updateDoctorUpdatedAt.bind()
-                .setInstant("updated_at", now)
-                .setUuid("doctor_id", doctorId)
-        );
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(updateDoctorCredentials.bind()
+                        .setString("email", email)
+                        .setString("phone", phone)
+                        .setString("password_hash", passwordHash)
+                        .setInstant("updated_at", now)
+                        .setUuid("doctor_id", doctorId))
+                .addStatement(updateDoctorUpdatedAt.bind()
+                        .setInstant("updated_at", now)
+                        .setUuid("doctor_id", doctorId));
 
         if (clinicIds == null || clinicIds.isEmpty()) {
-            session.execute(updateDoctorIndividual.bind()
+            batch.addStatement(updateDoctorIndividual.bind()
                     .setInstant("updated_at", now)
-                    .setUuid("doctor_id", doctorId)
-            );
+                    .setUuid("doctor_id", doctorId));
         } else {
             for (UUID clinicId : clinicIds) {
-                session.execute(updateDoctorClinic.bind()
+                batch.addStatement(updateDoctorClinic.bind()
                         .setInstant("updated_at", now)
                         .setUuid("clinic_id", clinicId)
-                        .setUuid("doctor_id", doctorId)
-                );
+                        .setUuid("doctor_id", doctorId));
             }
         }
+        session.execute(batch.build());
+
+        findById(doctorId).ifPresent(updated ->
+                redisUtil.setAsync(CACHE_DOCTOR_PREFIX + doctorId, updated, TTL_DOCTOR));
     }
 
     @Override
     public void deleteDoctor(UUID doctorId, String email, String password) {
-
         ResultSet rs = session.execute(
                 selectAppointmentByDoctorStatus.bind()
                         .setUuid("doctor_id", doctorId)
@@ -701,29 +660,29 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             UUID patientId = r1.getUuid("patient_id");
             String status = r1.getString("status");
 
-            session.execute(deleteAppointmentsById.bind().setUuid("appointment_id", apptId));
-            session.execute(deleteAppointmentsByDoctor.bind()
-                    .setUuid("doctor_id", doctorId)
-                    .setLocalDate("appointment_date", apptDate)
-                    .setInstant("scheduled_time", apptTime)
-                    .setUuid("appointment_id", apptId));
-            session.execute(deleteAppointmentByDoctorStatus.bind()
-                    .setUuid("doctor_id", doctorId)
-                    .setString("status", status)
-                    .setLocalDate("appointment_date", apptDate)
-                    .setInstant("scheduled_time", apptTime)
-                    .setUuid("appointment_id", apptId));
-            session.execute(deleteAppointmentsByPatient.bind()
-                    .setUuid("patient_id", patientId)
-                    .setLocalDate("appointment_date", apptDate)
-                    .setInstant("scheduled_time", apptTime)
-                    .setUuid("appointment_id", apptId));
-            session.execute(decreaseCounter.bind()
-                    .setUuid("doctor_id", doctorId)
-                    .setLocalDate("appointment_date", apptDate));
+            BatchStatementBuilder apptBatch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                    .addStatement(deleteAppointmentsById.bind().setUuid("appointment_id", apptId))
+                    .addStatement(deleteAppointmentsByDoctor.bind()
+                            .setUuid("doctor_id", doctorId)
+                            .setLocalDate("appointment_date", apptDate)
+                            .setInstant("scheduled_time", apptTime)
+                            .setUuid("appointment_id", apptId))
+                    .addStatement(deleteAppointmentByDoctorStatus.bind()
+                            .setUuid("doctor_id", doctorId)
+                            .setString("status", status)
+                            .setLocalDate("appointment_date", apptDate)
+                            .setInstant("scheduled_time", apptTime)
+                            .setUuid("appointment_id", apptId))
+                    .addStatement(deleteAppointmentsByPatient.bind()
+                            .setUuid("patient_id", patientId)
+                            .setLocalDate("appointment_date", apptDate)
+                            .setInstant("scheduled_time", apptTime)
+                            .setUuid("appointment_id", apptId))
+                    .addStatement(decreaseCounter.bind()
+                            .setUuid("doctor_id", doctorId)
+                            .setLocalDate("appointment_date", apptDate));
+            session.execute(apptBatch.build());
         }
-
-        session.execute(deleteAppointmentsByDoctorDate.bind().setUuid("doctor_id", doctorId));
 
         Row doc = session.execute(selectDoctorById.bind().setUuid("doctor_id", doctorId)).one();
         List<UUID> clinicIds = doc != null ? doc.getList("clinic_ids", UUID.class) : null;
@@ -731,6 +690,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         ResultSet locs = session.execute(selectGeoPrefixByDoctor.bind().setUuid("doctor_id", doctorId));
 
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(deleteAppointmentsByDoctorDate.bind().setUuid("doctor_id", doctorId))
                 .addStatement(deleteDoctorCredentials.bind().setUuid("doctor_id", doctorId))
                 .addStatement(deleteDoctors.bind().setUuid("doctor_id", doctorId))
                 .addStatement(deleteDoctorSchedules.bind().setUuid("doctor_id", doctorId));
@@ -753,6 +713,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         batch.addStatement(deleteDoctorLookup.bind().setString("email", email));
 
         session.execute(batch.build());
+        redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
+        clearLocationCache();
     }
 
     @Override
@@ -774,9 +736,11 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
             Set<String> keys = redisUtil.getKeys(CACHE_LOCATION_PREFIX + "*");
             if (keys != null && !keys.isEmpty()) {
                 for (String key : keys) {
-                    redisUtil.delete(key);
+                    redisUtil.deleteAsync(key);
                 }
+                log.debug("Location cache invalidation completed.");
             }
+            log.debug("No location cache to clear.");
         } catch (Exception e) {
             log.warn("Failed to clear location cache: {}", e.getMessage());
         }

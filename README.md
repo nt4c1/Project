@@ -1,8 +1,17 @@
-# Health Service (gRPC + Micronaut + ScyllaDB)
+# Health Management System (HMS)
 
-A high-performance, distributed Healthcare Management System built with **Micronaut**, **gRPC**, and **ScyllaDB**. The system provides real-time doctor discovery, clinic management, and appointment scheduling with high availability and geographic proximity features.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-repo/health-service)
+[![Micronaut](https://img.shields.io/badge/framework-Micronaut%204.x-blue)](https://micronaut.io/)
+[![gRPC](https://img.shields.io/badge/protocol-gRPC-orange)](https://grpc.io/)
+[![ScyllaDB](https://img.shields.io/badge/database-ScyllaDB-cyan)](https://www.scylladb.com/)
+[![Redis](https://img.shields.io/badge/cache-Redis-red)](https://redis.io/)
+[![NATS](https://img.shields.io/badge/messaging-NATS-purple)](https://nats.io/)
 
-## 🏛️ System Overview
+A high-performance, distributed Healthcare Management System engineered for scalability and low-latency doctor-patient interactions. Built on a modern **Cloud-Native** stack using **Micronaut**, **gRPC**, and **ScyllaDB**, this system handles real-time doctor discovery, clinic orchestration, and intelligent appointment scheduling.
+
+## 🏛️ System Architecture
+
+The project adheres to **Hexagonal Architecture (Ports and Adapters)** and **Domain-Driven Design (DDD)** principles, ensuring a clean separation of concerns and high testability.
 
 ```mermaid
 graph TD
@@ -15,99 +24,110 @@ graph TD
         G[Doctor & Patient Grpc Services]
     end
 
-    subgraph "Hexagonal Application Layers"
-        G --> |Use Cases| UC[Application Business Logic]
+    subgraph "Core Business Logic"
+        G --> |Use Cases| UC[Application Layer]
         UC --> |Enrichment| LS[Location Service]
     end
 
-    subgraph "Persistence & Events"
-        UC --> |Write/Read| DB[(ScyllaDB)]
-        UC --> |Caching| RD[(Redis)]
-        UC --> |Publish/Listen| NT((NATS))
-        LS --> |Geocoding| PH[Photon API]
+    subgraph "Infrastructure & Persistence"
+        UC --> |CQL| DB[(ScyllaDB Cluster)]
+        UC --> |Async| RD[(Redis Cache)]
+        UC --> |Pub/Sub| NT((NATS JetStream))
+        LS --> |HTTP| PH[Photon Geocoding]
     end
 ```
 
----
-
-## 🏗️ Architecture & Design
-The project follows **Hexagonal Architecture (Ports and Adapters)** and **Domain-Driven Design (DDD)** principles to ensure high maintainability and testability:
-- **Domain Layer**: Contains business models (Doctor, Patient, Appointment), logic, and port interfaces.
-- **Application Layer**: Orchestrates use cases (Booking, Discovery, Auth) and coordinates between domain and infrastructure.
-- **Adapters Layer**: 
-    - **Input (Driving)**: gRPC Services, NATS Listeners (reacting to events).
-    - **Output (Driven)**: ScyllaDB Repositories, Photon API Client, NATS Clients, Redis Caching.
+### Module Breakdown
+- **`common`**: Shared Protobuf definitions, security utilities (JWT, BCrypt), and cross-cutting concerns (Validation, DateTime).
+- **`doctor-module`**: Manages doctor profiles, clinic rosters, complex schedules, and geographic search indices.
+- **`patient-module`**: Handles patient lifecycle, appointment history, and profile management.
+- **`app`**: Main entry point for the Micronaut application, responsible for DI container initialization and global configuration.
 
 ---
 
 ## 🚀 Key Features
 
-### 👨‍⚕️ Doctor & Clinic Management
-- **Geographic Discovery**: Nearby doctor search using multi-precision Geohashes (4 to 6).
-- **Availability Logic**: Real-time "Available Today" status vs. "Next Possible Date" calculations.
-- **Bulk Optimization**: Efficient data retrieval using `IN` clause batching for high-performance discovery.
+### 👨‍⚕️ Intelligent Doctor Discovery
+- **Geographic Search**: Real-time nearby doctor lookup using multi-precision **Geohash indexing** (4-6 characters) for optimized spatial queries.
+- **Dynamic Availability**: Automated "Available Today" status and "Next Possible Date" calculations based on complex weekly schedules and overrides.
+- **Proximity Ranking**: Accurate distance calculations using the **Haversine formula** for localized results.
 
-### 📅 Advanced Appointment System
-- **Slot Alignment**: Enforces strict booking intervals based on doctor-defined `slotDurationMinutes`.
-- **Capacity Management**: Automatic rejection of bookings exceeding `maxAppointmentsPerDay`.
-- **Conflict Prevention**: Native double-booking prevention at the data layer using atomic checks.
-
-### 🌍 Location Intelligence
-- **Photon Geocoding**: Resolves natural language addresses (e.g., "Kathmandu") into high-precision coordinates.
-- **Proximity Sorting**: Haversine formula implementation for accurate distance-based sorting in kilometers.
+### 📅 Advanced Scheduling Engine
+- **Atomic Bookings**: Prevents double-booking at the database layer using ScyllaDB's high-concurrency model.
+- **Capacity Controls**: Enforces `maxAppointmentsPerDay` and strict `slotDuration` alignment.
+- **Status Lifecycle**: Full appointment lifecycle management: `PENDING` → `ACCEPTED` → `COMPLETED` / `CANCELLED` / `POSTPONED`.
 
 ### ⚡ Performance & Scalability
-- **Event-Driven**: NATS messaging for asynchronous updates and decoupling between Doctor and Patient modules.
-- **Cache-Aside Pattern**: Redis-backed caching for doctor profiles (1h TTL) and location-based searches (10m TTL).
+- **Event-Driven Core**: Decoupled micro-modules communicating via **NATS** for asynchronous state updates.
+- **Optimized Caching**: Cache-Aside pattern with Redis for doctor profiles (1h TTL) and location results (10m TTL).
+    - *Update*: Now supports **Java 8 Date/Time types** (JSR-310) for seamless serialization of `Instant` and `LocalDate`.
+    - Features **Asynchronous Redis operations** for non-blocking I/O.
+- **Database Optimization**: 
+    - Full implementation of **Prepared Statements** across all repositories (`Doctor`, `Patient`, `Clinic`, `Credentials`) to minimize query parsing overhead on ScyllaDB.
+    - **Advanced Schema Design**: Implemented a dual-table strategy (`appointments_by_patient` and `appointments_by_patient_all`) to provide optimized views for both date-specific and patient-wide history lookups, eliminating the need for expensive `ALLOW FILTERING` queries.
+    - Optimized use of `BatchStatement` for atomic, multi-table denormalized writes, ensuring consistency across replicated views.
 
 ---
 
-## 📡 NATS Event Ecosystem
-NATS is used to decouple the system by broadcasting state changes asynchronously:
-- **Subjects**: `doctor.*`, `patient.*`, `appointment.*`.
-- **Workflow**:
-    1. Doctor accepts an appointment via gRPC.
-    2. System updates ScyllaDB.
-    3. `appointment.accepted` is broadcast via NATS.
-    4. Interested modules (like `patient-module`) log the event or trigger notifications.
+## 🗺️ Future Roadmap
+- [ ] **MapStruct Integration**: Replace manual boilerplate mappers with compile-time generated mappers for better performance and maintainability.
+- [ ] **Observability**: Integrate **OpenTelemetry** for distributed tracing across gRPC and NATS boundaries.
+- [ ] **Resilience**: Implement `@CircuitBreaker` and `@Retryable` patterns for external HTTP clients (Photon).
+- [ ] **Centralized Config**: Migrate to Gradle Version Catalogs (`libs.versions.toml`) for standardized dependency management.
 
 ---
 
-## 🔐 Security & Authentication
-- **Initial Login**: Uses **gRPC Basic Auth metadata** (`Authorization: Basic base64(email:password)`).
-- **Session Auth**: Uses **JWT Bearer Tokens** (`Authorization: Bearer <token>`).
-- **Password Reset**:
-    - `ForgotPassword`: Public RPC, generates a **15-minute reset token**.
-    - `ResetPassword`: **Authenticated** RPC requiring the reset token in the Bearer header for high security.
+## 🛠️ Technology Stack
+
+| Component | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Framework** | Micronaut | Lightweight, AOT-compiled JVM framework |
+| **API Protocol** | gRPC | High-performance, type-safe binary communication |
+| **Primary DB** | ScyllaDB | Cassandra-compatible, low-latency NoSQL database |
+| **Caching** | Redis (Lettuce) | Distributed caching and locking |
+| **Messaging** | NATS | High-speed, lightweight messaging system |
+| **Geocoding** | Photon (Client) | Address-to-coordinate resolution |
+| **Security** | JWT & BCrypt | Token-based auth and secure password hashing |
 
 ---
 
-## 📦 Project Structure
-- `common`: Shared Proto definitions, security utilities, and shared models.
-- `doctor-module`: Core logic for doctors, clinics, schedules, and geographic search.
-- `patient-module`: Patient profiles and appointment history.
-- `src/main`: Application entry point and global configuration.
-
----
-
-## ⚙️ Local Development Setup
+## ⚙️ Development Guide
 
 ### Prerequisites
 - **JDK 17+**
-- **Docker & Compose** (For ScyllaDB, NATS, and Redis)
+- **Docker & Docker Compose**
+- **Gradle 8.x**
 
-### Running Services
+### Infrastructure Setup
+Spin up the required infrastructure (ScyllaDB, Redis, NATS):
 ```bash
-# Start infrastructure
 docker compose up -d
-
-# Run application
-./gradlew clean run
 ```
 
-### Monitoring (Localhost)
-- **gRPC Server**: `localhost:50051` (Use Kreya or Postman)
-- **NATS Monitoring**: `http://localhost:8223`
-    - `/connz`: See connected apps.
-    - `/subsz`: See active listeners.
-- **Redis Stats**: Access via `redis-cli -p 6380 info`.
+### Running the Application
+```bash
+./gradlew run
+```
+
+### Testing with gRPC
+The gRPC server starts on `localhost:50051`. You can use tools like **Kreya**, **Postman**, or `grpcurl` to interact with the services.
+
+Example `grpcurl` command:
+```bash
+grpcurl -plaintext localhost:50051 list
+```
+
+---
+
+## 🔐 Security Model
+1. **Initial Login**: Basic Authentication via gRPC metadata.
+2. **Session Persistence**: JWT-based Bearer Token required for all protected RPCs.
+3. **Reset Flow**: Secure 15-minute one-time tokens for password recovery.
+4. **Context Injection**: Authentication context (User ID, Role) is propagated via gRPC Interceptors.
+
+---
+
+## 📈 Monitoring & Maintenance
+- **NATS Health**: Access `http://localhost:8222/varz` for server stats.
+- **ScyllaDB Monitoring**: Use `nodetool status` to check cluster health.
+- **Logging**: Centralized logging via SLF4J and Logback (configured in `src/main/resources/logback.xml`).

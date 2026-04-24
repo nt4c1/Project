@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 
 public class MapperClass {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MapperClass.class);
+    public static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MapperClass.class);
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
     private static final UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
 

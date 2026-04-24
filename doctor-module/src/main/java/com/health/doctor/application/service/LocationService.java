@@ -70,9 +70,4 @@ public class LocationService {
 
         return new Location(lat, lng, geohash, fullName);
     }
-
-    // Helper to avoid nulls in fullName
-    private String safe(String value) {
-        return value != null ? value : "";
-    }
 }
