@@ -28,6 +28,8 @@ public interface DoctorRepositoryPort {
 
     List<UUID> findClinicIds(UUID doctorId);
 
+    void addClinicId(UUID doctorId, UUID clinicId);
+
     Optional<Doctor> findActive(UUID doctorId);
 
 }

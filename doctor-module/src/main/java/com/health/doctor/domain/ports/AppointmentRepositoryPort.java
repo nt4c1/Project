@@ -14,7 +14,11 @@ public interface AppointmentRepositoryPort {
 
     List<Appointment> findByDoctorAndDate(UUID doctorId, LocalDate date);
 
+    List<Appointment> findByDoctor(UUID doctorId);
+
     List<Appointment> findDoctorAndStatus(UUID doctorId, String status, LocalDate date);
+
+    List<Appointment> findDoctorAndStatus(UUID doctorId, String status);
 
     List<Appointment> findPending(UUID doctorId, LocalDate date);
 

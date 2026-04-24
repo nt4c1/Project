@@ -276,6 +276,26 @@ CREATE TABLE appointments_by_patient (
 ) WITH CLUSTERING ORDER BY (scheduled_time ASC, appointment_id ASC)
    AND default_time_to_live = 15552000;
 
+-- Doctor's all appointments view
+CREATE TABLE appointments_by_doctor_all (
+                                        doctor_id        UUID,
+                                        appointment_date DATE,
+                                        scheduled_time   TIMESTAMP,
+                                        appointment_id   UUID,
+                                        patient_id       UUID,
+                                        clinic_id        UUID,
+                                        patient_name     TEXT,
+                                        patient_phone    TEXT,
+                                        status           TEXT,
+                                        reason_for_visit TEXT,
+                                        doctor_notes     TEXT,
+                                        cancellation_reason TEXT,
+                                        created_at       TIMESTAMP,
+                                        updated_at       TIMESTAMP,
+                                        PRIMARY KEY (doctor_id, appointment_date, scheduled_time, appointment_id)
+) WITH CLUSTERING ORDER BY (appointment_date ASC, scheduled_time ASC, appointment_id ASC)
+   AND default_time_to_live = 15552000;
+
 -- Patient appointment history (all dates)
 CREATE TABLE appointments_by_patient_all (
                                          patient_id       UUID,

@@ -90,22 +90,41 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
     }
 
     @Override
+    public void update(DoctorSchedule schedule) {
+        String cacheKey = CACHE_SCHEDULE_PREFIX + schedule.getDoctorId();
+        redisUtil.deleteAsync(cacheKey);
+
+        Set<String> days = schedule.getWorkingDays().stream()
+                .map(DayOfWeek::name)
+                .collect(Collectors.toSet());
+
+        Instant now = Instant.now();
+        save(schedule);
+    }
+
+    @Override
     public Optional<DoctorSchedule> findByDoctorAndClinic(UUID doctorId, UUID clinicId) {
 
-        String cacheKey = CACHE_SCHEDULE_PREFIX+doctorId;
+        String cacheKey = CACHE_SCHEDULE_PREFIX + doctorId;
         try {
             DoctorSchedule cached = redisUtil.get(cacheKey, DoctorSchedule.class);
-            log.info("Redis hit for findByDoctorAndClinic: {}", doctorId);
-            if (cached != null) return Optional.of(cached);
+            if (cached != null) {
+                log.info("Redis hit for findByDoctorAndClinic: {}", doctorId);
+                return Optional.of(cached);
+            }
         } catch (Exception e) {
             log.warn("Redis GET failed for findByDoctorAndClinic: {}", e.getMessage());
         }
 
         Row r = session.execute(selectByDoctorAndClinic.bind(doctorId, clinicId)).one();
-        assert r != null;
-        redisUtil.setAsync(cacheKey, mapRowToSchedule(r), 3600);
+        if (r == null) {
+            return Optional.empty();
+        }
 
-        return Optional.of(r).map(this::mapRowToSchedule);
+        DoctorSchedule schedule = mapRowToSchedule(r);
+        redisUtil.setAsync(cacheKey, schedule, 3600);
+
+        return Optional.of(schedule);
     }
 
     @Override

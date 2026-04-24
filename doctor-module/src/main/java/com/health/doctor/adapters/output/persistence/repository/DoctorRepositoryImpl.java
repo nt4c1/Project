@@ -44,6 +44,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final PreparedStatement updateDoctorUpdatedAt;
     private final PreparedStatement updateDoctorIndividual;
     private final PreparedStatement updateDoctorClinic;
+    private final PreparedStatement deleteDoctorByIndividual;
     private final PreparedStatement selectAppointmentByDoctorStatus;
     private final PreparedStatement selectAppointmentsByDoctor;
     private final PreparedStatement deleteAppointmentsById;
@@ -216,6 +217,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 update("doctor_service", "doctors_by_clinic")
                         .setColumn("updated_at", bindMarker("updated_at"))
                         .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .build()
+        );
+
+        deleteDoctorByIndividual = session.prepare(
+                deleteFrom("doctor_service", "doctors_by_individual")
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
@@ -723,6 +730,48 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setUuid("doctor_id", doctorId)
         ).one();
         return r != null ? r.getList("clinic_ids", UUID.class) : Collections.emptyList();
+    }
+
+    @Override
+    public void addClinicId(UUID doctorId, UUID clinicId) {
+        Optional<Doctor> docOpt = findById(doctorId);
+        if (docOpt.isEmpty()) return;
+        Doctor d = docOpt.get();
+
+        Instant now = Instant.now();
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED);
+
+        //Update primary doctor table
+        batch.addStatement(
+                update("doctor_service", "doctors")
+                        .append("clinic_ids", literal(Collections.singletonList(clinicId)))
+                        .setColumn("type", literal(DoctorType.DOCTOR_TYPE_CLINIC_DOCTOR.name()))
+                        .setColumn("updated_at", literal(now))
+                        .whereColumn("doctor_id").isEqualTo(literal(doctorId))
+                        .build()
+        );
+
+        // If individual doctor, delete from doctors_by_individual
+        if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
+            batch.addStatement(deleteDoctorByIndividual.bind()
+                    .setUuid("doctor_id", doctorId));
+        }
+
+        // Add to doctors_by_clinic
+        batch.addStatement(insertDoctorByClinic.bind()
+                .setUuid("clinic_id", clinicId)
+                .setUuid("doctor_id", d.getId())
+                .setString("name", d.getName())
+                .setString("type", d.getType().name())
+                .setString("specialization", d.getSpecialization())
+                .setString("phone", d.getPhone())
+                .setBoolean("is_active", d.isActive())
+                .setBoolean("is_deleted", false)
+                .setInstant("created_at", now)
+                .setInstant("updated_at", now));
+
+        session.execute(batch.build());
+        redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
     }
 
     @Override

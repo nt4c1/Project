@@ -27,10 +27,7 @@ import org.mindrot.jbcrypt.BCrypt;
 import io.micronaut.validation.Validated;
 
 import java.time.*;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -227,6 +224,32 @@ public class DoctorUseCase implements DoctorInterface {
     @Override
     public void updateDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password, @NotBlank String phone) {
         repo.updateDoctor(doctorId, email, password, phone);
+        natsClient.sendDoctorUpdated(doctorId.toString());
+    }
+
+    @Override
+    public void addClinicToDoctor(@NotNull UUID doctorId, @NotNull List<UUID> clinicIds) {
+        if (clinicIds == null || clinicIds.isEmpty()) return;
+
+        Doctor doctor = repo.findById(doctorId)
+                .orElseThrow(() -> new NotFoundException("Doctor not found: " + doctorId));
+
+        List<UUID> existingClinics = doctor.getClinicIds() != null ? doctor.getClinicIds() : Collections.emptyList();
+        
+        List<UUID> newClinicIds = clinicIds.stream()
+                .filter(id -> !existingClinics.contains(id))
+                .distinct()
+                .toList();
+
+        if (newClinicIds.isEmpty()) return;
+
+        for (UUID clinicId : newClinicIds) {
+            repo.addClinicId(doctorId, clinicId);
+            Location local = clinicRepo.getLocation(clinicId);
+            if (local != null) {
+                repo.updateLocation(doctorId, clinicId, local);
+            }
+        }
         natsClient.sendDoctorUpdated(doctorId.toString());
     }
 

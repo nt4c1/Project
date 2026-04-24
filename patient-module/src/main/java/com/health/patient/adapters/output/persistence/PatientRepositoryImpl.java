@@ -36,6 +36,7 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
     private final PreparedStatement deleteAppointmentByPatient;
     private final PreparedStatement deleteAppointmentByPatientAll;
     private final PreparedStatement deleteAppointmentByDoctor;
+    private final PreparedStatement deleteAppointmentByDoctorAll;
     private final PreparedStatement deleteAppointmentByDoctorStatus;
     private final PreparedStatement decrementAppointmentCount;
     private final PreparedStatement deletePatient;
@@ -106,6 +107,10 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         );
         this.deleteAppointmentByDoctor = session.prepare(
                 "DELETE FROM doctor_service.appointments_by_doctor " +
+                        "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?"
+        );
+        this.deleteAppointmentByDoctorAll = session.prepare(
+                "DELETE FROM doctor_service.appointments_by_doctor_all " +
                         "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?"
         );
         this.deleteAppointmentByDoctorStatus = session.prepare(
@@ -223,6 +228,10 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
             // Delete from appointments_by_doctor
             session.execute(deleteAppointmentByDoctor.bind(
+                    doctorId, apptDate, apptTime, apptId));
+
+            // Delete from appointments_by_doctor_all
+            session.execute(deleteAppointmentByDoctorAll.bind(
                     doctorId, apptDate, apptTime, apptId));
 
             // Delete from appointments_by_doctor_status

@@ -28,6 +28,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     private final PreparedStatement insertById;
     private final PreparedStatement insertByDoctor;
     private final PreparedStatement insertByDoctorStatus;
+    private final PreparedStatement insertByDoctorAll;
     private final PreparedStatement insertByPatient;
     private final PreparedStatement insertByPatientAll;
     private final PreparedStatement updateCount;
@@ -35,6 +36,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     private final PreparedStatement selectDoctorProfile;
     private final PreparedStatement selectClinicName;
     private final PreparedStatement selectByDoctorStatusAndDate;
+    private final PreparedStatement selectByDoctorAll;
     private final PreparedStatement selectByPatientAndDate;
     private final PreparedStatement selectById;
     private final PreparedStatement selectCount;
@@ -51,6 +53,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     private final PreparedStatement updateCancelByPatientAll;
 
     private final PreparedStatement deleteByDoctor;
+    private final PreparedStatement deleteByDoctorAll;
     private final PreparedStatement deleteByPatient;
     private final PreparedStatement deleteByPatientAll;
 
@@ -77,6 +80,11 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 "(doctor_id, status, appointment_date, scheduled_time, " +
                 " appointment_id, patient_id, clinic_id, patient_name, patient_phone, reason_for_visit) VALUES (?,?,?,?,?,?,?,?,?,?)");
 
+        this.insertByDoctorAll = session.prepare("INSERT INTO doctor_service.appointments_by_doctor_all " +
+                "(doctor_id, appointment_date, scheduled_time, appointment_id, " +
+                " patient_id, clinic_id, patient_name, patient_phone, status, " +
+                " reason_for_visit, doctor_notes, cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+
         this.insertByPatient = session.prepare("INSERT INTO doctor_service.appointments_by_patient " +
                 "(patient_id, appointment_date, scheduled_time, appointment_id, " +
                 " doctor_id, clinic_id, doctor_name, clinic_name, specialization, " +
@@ -95,6 +103,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         this.selectClinicName = session.prepare("SELECT name FROM doctor_service.clinics WHERE clinic_id=?");
         this.selectByDoctorStatusAndDate = session.prepare("SELECT * FROM doctor_service.appointments_by_doctor_status " +
                 "WHERE doctor_id=? AND status=? AND appointment_date=?");
+        this.selectByDoctorAll = session.prepare("SELECT * FROM doctor_service.appointments_by_doctor_all WHERE doctor_id=?");
         this.selectByPatientAndDate = session.prepare("SELECT * FROM doctor_service.appointments_by_patient WHERE patient_id=? AND appointment_date=?");
         this.selectById = session.prepare("SELECT * FROM doctor_service.appointments_by_id WHERE appointment_id=?");
         this.selectCount = session.prepare("SELECT count FROM doctor_service.appointment_count_by_doctor_date " +
@@ -126,6 +135,8 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?");
 
         this.deleteByDoctor = session.prepare("DELETE FROM doctor_service.appointments_by_doctor " +
+                "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?");
+        this.deleteByDoctorAll = session.prepare("DELETE FROM doctor_service.appointments_by_doctor_all " +
                 "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?");
         this.deleteByPatient = session.prepare("DELETE FROM doctor_service.appointments_by_patient " +
                 "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?");
@@ -172,6 +183,9 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 .addStatement(insertByDoctor.bind(a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
                         a.getStatus().name(), a.getReasonForVisit(), null, null, now, now))
+                .addStatement(insertByDoctorAll.bind(a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
+                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
+                        a.getStatus().name(), a.getReasonForVisit(), null, null, now, now))
                 .addStatement(insertByDoctorStatus.bind(a.getDoctorId(), a.getStatus().name(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit()))
                 .addStatement(insertByPatient.bind(a.getPatientId(), a.getAppointmentDate(), scheduledInstant,
@@ -215,6 +229,16 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     }
 
     @Override
+    public List<Appointment> findByDoctor(UUID doctorId) {
+        ResultSet rs = session.execute(selectByDoctorAll.bind(doctorId));
+        List<Appointment> list = new ArrayList<>();
+        for (Row r : rs) {
+            list.add(MapperClass.mapDoctorRow(r));
+        }
+        return list;
+    }
+
+    @Override
     public List<Appointment> findDoctorAndStatus(UUID doctorId, String status, LocalDate date) {
         ResultSet rs = session.execute(selectByDoctorStatusAndDate.bind(doctorId, status, date));
         List<Appointment> list = new ArrayList<>();
@@ -228,6 +252,18 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
             UUID cid = r.getUuid("clinic_id");
             a.setClinicId(cid != null ? cid : NO_CLINIC_ID);
             list.add(a);
+        }
+        return list;
+    }
+
+    @Override
+    public List<Appointment> findDoctorAndStatus(UUID doctorId, String status) {
+        ResultSet rs = session.execute(selectByDoctorAll.bind(doctorId));
+        List<Appointment> list = new ArrayList<>();
+        for (Row r : rs) {
+            if (status.equals(r.getString("status"))) {
+                list.add(MapperClass.mapDoctorRow(r));
+            }
         }
         return list;
     }
@@ -302,6 +338,9 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
                 .addStatement(updateStatusById.bind(newStatus, now, a.getId()))
                 .addStatement(updateStatusByDoctor.bind(newStatus, now, a.getDoctorId(), a.getAppointmentDate(), scheduledInstant, a.getId()))
+                .addStatement(insertByDoctorAll.bind(a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
+                        a.getId(), a.getPatientId(), clinicId, a.getPatientName(), a.getPatientPhone(),
+                        newStatus, a.getReasonForVisit(), null, null, a.getCreatedAt(), now))
                 .addStatement(deleteByDoctorStatus.bind(a.getDoctorId(), a.getStatus().name(), a.getAppointmentDate(), scheduledInstant, a.getId()))
                 .addStatement(insertByDoctorStatus.bind(a.getDoctorId(), newStatus, a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getPatientId(), clinicId, a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit()))
@@ -325,6 +364,7 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
                 .addStatement(updateCancelById.bind(cancellationReason, now, appointmentId))
                 .addStatement(updateCancelByDoctor.bind(cancellationReason, now, doctorId, date, scheduledInstant, appointmentId))
+                .addStatement(insertByDoctorAll.bind(doctorId, date, scheduledInstant, appointmentId, patientId, clinicId, null, null, "CANCELLED", null, null, cancellationReason, now, now))
                 .addStatement(updateCancelByPatient.bind(cancellationReason, patientId, date, scheduledInstant, appointmentId))
                 .addStatement(updateCancelByPatientAll.bind(cancellationReason, patientId, date, scheduledInstant, appointmentId))
                 .addStatement(deleteByDoctorStatus.bind(doctorId, currentStatus, date, scheduledInstant, appointmentId))
@@ -380,8 +420,12 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
                 .addStatement(updateStatusById.bind(newStatus, now, a.getId()))
                 .addStatement(deleteByDoctor.bind(a.getDoctorId(), oldDate, oldInstant, a.getId()))
+                .addStatement(deleteByDoctorAll.bind(a.getDoctorId(), oldDate, oldInstant, a.getId()))
                 .addStatement(insertByDoctor.bind(a.getDoctorId(), a.getAppointmentDate(), newInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),    
+                        newStatus, a.getReasonForVisit(), null, null, a.getCreatedAt(), now))
+                .addStatement(insertByDoctorAll.bind(a.getDoctorId(), a.getAppointmentDate(), newInstant,
+                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
                         newStatus, a.getReasonForVisit(), null, null, a.getCreatedAt(), now))
                 .addStatement(deleteByDoctorStatus.bind(a.getDoctorId(), a.getStatus().name(), oldDate, oldInstant, a.getId()))
                 .addStatement(insertByDoctorStatus.bind(a.getDoctorId(), newStatus, a.getAppointmentDate(), newInstant,

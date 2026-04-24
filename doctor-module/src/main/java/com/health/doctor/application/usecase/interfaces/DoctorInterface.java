@@ -6,6 +6,7 @@ import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -38,6 +39,8 @@ public interface DoctorInterface {
                       @NotBlank String email,
                       @NotBlank String password,
                       @NotBlank String phone);
+
+    void addClinicToDoctor(@NotNull UUID doctorId, @NotEmpty List<UUID> clinicIds);
 
     void deleteDoctor(@NotNull UUID doctorId,
                       @NotBlank  String email,

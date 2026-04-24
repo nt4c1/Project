@@ -49,12 +49,19 @@ graph TD
 
 ### 👨‍⚕️ Intelligent Doctor Discovery
 - **Geographic Search**: Real-time nearby doctor lookup using multi-precision **Geohash indexing** (4-6 characters) for optimized spatial queries.
+- **Bulk Clinic Management**: 
+    - Support for associating doctors with **multiple clinics** in a single operation.
+    - **Automated Profile Transition**: Intelligent system that automatically handles the transition from "Individual" to "Clinic-Affiliated" status across all denormalized tables.
+    - **Duplicate Prevention**: Integrated validation to filter redundant clinic associations and ensure data uniqueness.
 - **Dynamic Availability**: Automated "Available Today" status and "Next Possible Date" calculations based on complex weekly schedules and overrides.
 - **Proximity Ranking**: Accurate distance calculations using the **Haversine formula** for localized results.
 
 ### 📅 Advanced Scheduling Engine
 - **Atomic Bookings**: Prevents double-booking at the database layer using ScyllaDB's high-concurrency model.
 - **Capacity Controls**: Enforces `maxAppointmentsPerDay` and strict `slotDuration` alignment.
+- **Intelligent Schedule Updates**: 
+    - **Guardrails**: Schedule updates are only permitted if there are no `ACCEPTED` appointments for the affected period, ensuring operational stability.
+    - **Automated Re-alignment**: All `PENDING` appointments are automatically postponed and re-verified against the new schedule parameters when a change occurs.
 - **Status Lifecycle**: Full appointment lifecycle management: `PENDING` → `ACCEPTED` → `COMPLETED` / `CANCELLED` / `POSTPONED`.
 
 ### ⚡ Performance & Scalability
@@ -64,8 +71,8 @@ graph TD
     - Features **Asynchronous Redis operations** for non-blocking I/O.
 - **Database Optimization**: 
     - Full implementation of **Prepared Statements** across all repositories (`Doctor`, `Patient`, `Clinic`, `Credentials`) to minimize query parsing overhead on ScyllaDB.
-    - **Advanced Schema Design**: Implemented a dual-table strategy (`appointments_by_patient` and `appointments_by_patient_all`) to provide optimized views for both date-specific and patient-wide history lookups, eliminating the need for expensive `ALLOW FILTERING` queries.
-    - Optimized use of `BatchStatement` for atomic, multi-table denormalized writes, ensuring consistency across replicated views.
+    - **Advanced Schema Design**: Implemented a multi-view strategy (`appointments_by_patient_all`, `appointments_by_doctor_all`) to provide optimized, date-independent views for history lookups, eliminating the need for expensive `ALLOW FILTERING` queries.
+    - Optimized use of **Atomic CQL Batches** for synchronized, multi-table denormalized writes, ensuring consistency across all specialized views.
 
 ---
 

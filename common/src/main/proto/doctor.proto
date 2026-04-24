@@ -21,6 +21,7 @@ service DoctorGrpcService {
   rpc DoctorActive             (DoctorActiveRequest)         returns (DoctorActiveResponse);
   rpc UpdateLocation           (UpdateLocationRequest)       returns (UpdateLocationResponse);
   rpc UpdateDoctor             (UpdateDoctorRequest)         returns (UpdateDoctorResponse);
+  rpc AddClinic                (AddClinicRequest)            returns (AddClinicResponse);
   rpc DeleteDoctor             (DeleteDoctorRequest)         returns (DeleteDoctorResponse);
 
   // Clinic
@@ -30,6 +31,7 @@ service DoctorGrpcService {
 
   // Schedule
   rpc CreateSchedule           (CreateScheduleRequest)       returns (CreateScheduleResponse);
+  rpc UpdateSchedule           (UpdateScheduleRequest)       returns (UpdateScheduleResponse);
   rpc GetDoctorSchedule        (GetScheduleRequest)          returns (GetScheduleResponse);
 
   // Location search
@@ -87,6 +89,16 @@ message UpdateDoctorResponse {
   DoctorMessage doctor = 2;
 }
 
+message AddClinicRequest {
+  string doctor_id = 1;
+  repeated string clinic_ids = 2;
+}
+
+message AddClinicResponse {
+  bool success = 1;
+  string message = 2;
+}
+
 message DeleteDoctorRequest {
   string email = 1;
   string password = 2;
@@ -129,6 +141,20 @@ message CreateScheduleRequest {
   int32           max_appointments_day  = 7;
 }
 message CreateScheduleResponse { string message = 1; }
+
+message UpdateScheduleRequest {
+  string          doctor_id             = 1;
+  string          clinic_id             = 2;
+  repeated string working_days          = 3;
+  string          start_time            = 4;
+  string          end_time              = 5;
+  int32           slot_duration_minutes = 6;
+  int32           max_appointments_day  = 7;
+}
+
+message UpdateScheduleResponse {
+  string message = 1;
+}
 
 message GetScheduleRequest  { string doctor_id = 1; string clinic_id = 2; }
 message GetScheduleResponse {

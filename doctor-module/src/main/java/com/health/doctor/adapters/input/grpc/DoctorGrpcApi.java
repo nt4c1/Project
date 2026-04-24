@@ -146,11 +146,34 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                     .setDoctor(MapperClass.toMsg(updated))
                     .build());
             observer.onCompleted();
+            });
+            }
+
+    @Override
+    public void addClinic(AddClinicRequest request,
+                          StreamObserver<AddClinicResponse> observer) {
+        handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+            if (request.getClinicIdsList().isEmpty()) throw new DomainException("Clinic IDs are required", Status.INVALID_ARGUMENT);
+
+            ensureSelf(request.getDoctorId());
+            List<UUID> clinicIds = request.getClinicIdsList().stream()
+                    .filter(raw -> raw != null && !raw.isBlank())
+                    .map(raw -> UUID.fromString(raw.trim()))
+                    .collect(Collectors.toList());
+
+            doctorUseCase.addClinicToDoctor(UUID.fromString(request.getDoctorId()), clinicIds);
+
+            observer.onNext(AddClinicResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Clinics added successfully")
+                    .build());
+            observer.onCompleted();
         });
     }
 
-    @Override
-    public void deleteDoctor (DeleteDoctorRequest request,
+            @Override
+            public void deleteDoctor(DeleteDoctorRequest request,
                               StreamObserver<DeleteDoctorResponse> observer){
         handle(observer, () -> {
             if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
@@ -304,6 +327,39 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             );
             observer.onNext(CreateScheduleResponse.newBuilder()
                     .setMessage("Schedule created successfully")
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void updateSchedule(UpdateScheduleRequest request,
+                               StreamObserver<UpdateScheduleResponse> observer) {
+        handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+            if (request.getWorkingDaysList().isEmpty()) throw new DomainException("Working days are required", Status.INVALID_ARGUMENT);
+            if (request.getStartTime().isBlank()) throw new DomainException("Start time is required", Status.INVALID_ARGUMENT);
+            if (request.getEndTime().isBlank()) throw new DomainException("End time is required", Status.INVALID_ARGUMENT);
+
+            ensureSelf(request.getDoctorId());
+
+            UUID doctorId = UUID.fromString(request.getDoctorId());
+            UUID clinicId = NIL_UUID;
+            if (!request.getClinicId().isBlank()) {
+                clinicId = UUID.fromString(request.getClinicId());
+            }
+
+            scheduleUseCase.updateSchedule(
+                    doctorId,
+                    clinicId,
+                    new HashSet<>(request.getWorkingDaysList()),
+                    LocalTime.parse(request.getStartTime()),
+                    LocalTime.parse(request.getEndTime()),
+                    request.getSlotDurationMinutes(),
+                    request.getMaxAppointmentsDay()
+            );
+            observer.onNext(UpdateScheduleResponse.newBuilder()
+                    .setMessage("Schedule updated successfully")
                     .build());
             observer.onCompleted();
         });

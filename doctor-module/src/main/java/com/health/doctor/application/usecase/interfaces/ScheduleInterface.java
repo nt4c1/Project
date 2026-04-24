@@ -20,5 +20,13 @@ public interface ScheduleInterface {
                         @Min(1) int slotDurationMinutes,
                         @Min(1) int maxAppointmentsDay);
 
+    void updateSchedule(@NotNull UUID doctorId,
+                        @NotNull UUID clinicId,
+                        @NotEmpty Set<String> workingDays,
+                        @NotNull LocalTime startTime,
+                        @NotNull LocalTime endTime,
+                        @Min(1) int slotDurationMinutes,
+                        @Min(1) int maxAppointmentsDay);
+
     Optional<DoctorSchedule> getSchedule(@NotNull UUID doctorId, @NotNull UUID clinicId);
 }
