@@ -3,9 +3,12 @@ package com.health.patient.adapters.output.persistence;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.*;
 import com.health.common.exception.BookingException;
+import com.health.doctor.domain.model.AppointmentStatus;
+import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.patient.domain.model.Patient;
 import com.health.patient.domain.ports.PatientRepositoryPort;
 import com.health.patient.mapper.Mapper;
+import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 
 import java.time.Instant;
@@ -19,6 +22,7 @@ import static com.health.patient.mapper.Mapper.mapRow;
 public class PatientRepositoryImpl implements PatientRepositoryPort {
 
     private final CqlSession session;
+    private final Provider<AppointmentRepositoryPort> appointmentRepoProvider;
     private final PreparedStatement insertPatient;
     private final PreparedStatement insertEmailLookup;
     private final PreparedStatement selectPatientById;
@@ -28,21 +32,11 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
     private final PreparedStatement updatePassword;
     private final PreparedStatement selectAppointmentsByPatient;
     private final PreparedStatement selectAllAppointmentsByPatient;
-    private final PreparedStatement insertByPatient;
-    private final PreparedStatement insertByPatientAll;
-    private final PreparedStatement deleteByPatient;
-    private final PreparedStatement deleteByPatientAll;
-    private final PreparedStatement deleteAppointmentById;
-    private final PreparedStatement deleteAppointmentByPatient;
-    private final PreparedStatement deleteAppointmentByPatientAll;
-    private final PreparedStatement deleteAppointmentByDoctor;
-    private final PreparedStatement deleteAppointmentByDoctorAll;
-    private final PreparedStatement deleteAppointmentByDoctorStatus;
-    private final PreparedStatement decrementAppointmentCount;
-    private final PreparedStatement deletePatient;
+    private final PreparedStatement softDeletePatient;
 
-    public PatientRepositoryImpl(CqlSession session) {
+    public PatientRepositoryImpl(CqlSession session, Provider<AppointmentRepositoryPort> appointmentRepoProvider) {
         this.session = session;
+        this.appointmentRepoProvider = appointmentRepoProvider;
         this.insertPatient = session.prepare(
                 "INSERT INTO doctor_service.patients " +
                         "(patient_id, name, email, phone, password_hash, " +
@@ -54,7 +48,7 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
                         "VALUES (?,?) IF NOT EXISTS"
         );
         this.selectPatientById = session.prepare(
-                "SELECT * FROM doctor_service.patients WHERE patient_id=?"
+                "SELECT * FROM doctor_service.patients WHERE patient_id=? AND is_deleted = false ALLOW FILTERING"
         );
         this.selectIdByEmail = session.prepare(
                 "SELECT patient_id FROM doctor_service.patients_by_email WHERE email=?"
@@ -68,6 +62,9 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         this.updatePassword = session.prepare(
                 "UPDATE doctor_service.patients SET password_hash=?, updated_at=? WHERE patient_id=?"
         );
+        this.softDeletePatient = session.prepare(
+                "UPDATE doctor_service.patients SET is_deleted = true, updated_at = ? WHERE patient_id = ?"
+        );
         this.selectAppointmentsByPatient = session.prepare(
                 "SELECT appointment_id, appointment_date, scheduled_time, doctor_id, status " +
                         "FROM doctor_service.appointments_by_patient WHERE patient_id=? AND appointment_date=?"
@@ -75,55 +72,6 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         this.selectAllAppointmentsByPatient = session.prepare(
                 "SELECT appointment_id, appointment_date, scheduled_time, doctor_id, status " +
                         "FROM doctor_service.appointments_by_patient_all WHERE patient_id=?"
-        );
-        this.insertByPatient = session.prepare(
-                "INSERT INTO doctor_service.appointments_by_patient " +
-                        "(patient_id, appointment_date, scheduled_time, appointment_id, " +
-                        " doctor_id, clinic_id, doctor_name, clinic_name, specialization, " +
-                        " status, reason_for_visit, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
-        );
-        this.insertByPatientAll = session.prepare(
-                "INSERT INTO doctor_service.appointments_by_patient_all " +
-                        "(patient_id, appointment_date, scheduled_time, appointment_id, " +
-                        " doctor_id, clinic_id, doctor_name, clinic_name, specialization, " +
-                        " status, reason_for_visit, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
-        );
-        this.deleteByPatient = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_patient WHERE patient_id=? AND appointment_date=?"
-        );
-        this.deleteByPatientAll = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_patient_all WHERE patient_id=?"
-        );
-        this.deleteAppointmentById = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_id WHERE appointment_id=?"
-        );
-        this.deleteAppointmentByPatient = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_patient " +
-                        "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?"
-        );
-        this.deleteAppointmentByPatientAll = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_patient_all " +
-                        "WHERE patient_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?"
-        );
-        this.deleteAppointmentByDoctor = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_doctor " +
-                        "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?"
-        );
-        this.deleteAppointmentByDoctorAll = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_doctor_all " +
-                        "WHERE doctor_id=? AND appointment_date=? AND scheduled_time=? AND appointment_id=?"
-        );
-        this.deleteAppointmentByDoctorStatus = session.prepare(
-                "DELETE FROM doctor_service.appointments_by_doctor_status " +
-                        "WHERE doctor_id=? AND status=? AND appointment_date=? " +
-                        "AND scheduled_time=? AND appointment_id=?"
-        );
-        this.decrementAppointmentCount = session.prepare(
-                "UPDATE doctor_service.appointment_count_by_doctor_date " +
-                        "SET count = count - 1 WHERE doctor_id=? AND appointment_date=?"
-        );
-        this.deletePatient = session.prepare(
-                "DELETE FROM doctor_service.patients WHERE patient_id=?"
         );
     }
 
@@ -152,7 +100,7 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
     @Override
     public Optional<Patient> findById(UUID patientId) {
         Row r = session.execute(selectPatientById.bind(patientId)).one();
-        if (r == null || r.getBoolean("is_deleted")) return Optional.empty();
+        if (r == null) return Optional.empty();
         return Optional.of(mapRow(r));
     }
 
@@ -194,65 +142,24 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
     @Override
     public void deletePatient(UUID patientId) {
-        //Appointment Search - Check for active appointments across all dates
-        ResultSet activeRs = session.execute(selectAllAppointmentsByPatient.bind(patientId));
-        for (Row r : activeRs) {
+        Instant now = Instant.now();
+        // Updated requirement: block if status is ACCEPTED or POSTPONED
+        ResultSet rs = session.execute(selectAllAppointmentsByPatient.bind(patientId));
+        for (Row r : rs) {
             String status = r.getString("status");
-            if ("PENDING".equals(status) || "ACCEPTED".equals(status)) {
+            if (AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED.name().equals(status) || 
+                AppointmentStatus.APPOINTMENT_STATUS_POSTPONED.name().equals(status)) {
                 throw new BookingException(
-                        "Cannot delete patient with pending or accepted appointments. " +
-                                "Cancel all appointments first.");
+                        "Cannot delete patient with Accepted or Postponed appointments. " +
+                                "Cancel or complete them first.");
             }
         }
 
+        // 3. Soft delete the patient profile row
+        session.execute(softDeletePatient.bind(now, patientId));
 
-        ResultSet allAppts = session.execute(selectAllAppointmentsByPatient.bind(patientId));
-
-        for (Row r : allAppts) {
-            UUID      apptId   = r.getUuid("appointment_id");
-            LocalDate apptDate = r.getLocalDate("appointment_date");
-            Instant   apptTime = r.getInstant("scheduled_time");
-            UUID      doctorId = r.getUuid("doctor_id");
-            String    status   = r.getString("status");
-
-            // Delete from appointments_by_id
-            session.execute(deleteAppointmentById.bind(apptId));
-
-            // Delete from appointments_by_patient
-            session.execute(deleteAppointmentByPatient.bind(
-                    patientId, apptDate, apptTime, apptId));
-
-            // Delete from appointments_by_patient_all
-            session.execute(deleteAppointmentByPatientAll.bind(
-                    patientId, apptDate, apptTime, apptId));
-
-            // Delete from appointments_by_doctor
-            session.execute(deleteAppointmentByDoctor.bind(
-                    doctorId, apptDate, apptTime, apptId));
-
-            // Delete from appointments_by_doctor_all
-            session.execute(deleteAppointmentByDoctorAll.bind(
-                    doctorId, apptDate, apptTime, apptId));
-
-            // Delete from appointments_by_doctor_status
-            session.execute(deleteAppointmentByDoctorStatus.bind(
-                    doctorId, status, apptDate, apptTime, apptId));
-
-            // Decrement counter
-            session.execute(decrementAppointmentCount.bind(
-                    doctorId, apptDate));
-        }
-
-        // 3. Delete the patient profile rows
-        Optional<Patient> p = findById(patientId);
-        if (p.isPresent()) {
-            BatchStatement batch = BatchStatement.builder(DefaultBatchType.LOGGED)
-                    .addStatement(deletePatient.bind(patientId))
-                    .addStatement(deleteEmailLookup.bind(p.get().getEmail()))
-                    .addStatement(deleteByPatientAll.bind(patientId)) // Cleanup any leftovers
-                    .build();
-            session.execute(batch);
-        }
+        // Update all associated appointments status to DELETED
+        appointmentRepoProvider.get().deleteAppointmentsByPatient(patientId);
     }
 
 }

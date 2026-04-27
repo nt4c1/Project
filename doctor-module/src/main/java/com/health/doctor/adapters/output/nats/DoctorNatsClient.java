@@ -12,6 +12,9 @@ public interface DoctorNatsClient {
     @Subject("doctor.updated")
     void sendDoctorUpdated(String doctorId);
 
+    @Subject("doctor.deleted")
+    void sendDoctorDeleted(String doctorId);
+
     @Subject("appointment.created")
     void sendAppointmentCreated(String appointmentId);
 

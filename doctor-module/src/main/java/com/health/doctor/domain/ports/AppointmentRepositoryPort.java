@@ -40,4 +40,8 @@ public interface AppointmentRepositoryPort {
     void decrementCount(UUID doctorId, LocalDate date);
 
     void postpone(LocalDate oldDate , Appointment updated);
-}
+
+    void deleteAppointmentsByDoctor(UUID doctorId);
+
+    void deleteAppointmentsByPatient(UUID patientId);
+    }

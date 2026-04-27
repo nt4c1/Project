@@ -5,6 +5,7 @@ import com.health.common.exception.NotFoundException;
 import com.health.common.exception.ScheduleException;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.model.Appointment;
+import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
@@ -85,7 +86,7 @@ public class ScheduleUseCase implements ScheduleInterface {
                                @Min(1) int maxPerDay) {
 
         // Check for accepted appointments for this doctor at this clinic
-        List<Appointment> accepted = appointmentRepo.findDoctorAndStatus(doctorId, "ACCEPTED");
+        List<Appointment> accepted = appointmentRepo.findDoctorAndStatus(doctorId, AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED.name());
         long clinicAcceptedCount = accepted.stream()
                 .filter(a -> clinicId.equals(a.getClinicId()))
                 .count();
@@ -120,7 +121,7 @@ public class ScheduleUseCase implements ScheduleInterface {
         repo.update(schedule);
 
         //Postpone all other appointments (PENDING) for this doctor at this clinic
-        List<Appointment> pending = appointmentRepo.findDoctorAndStatus(doctorId, "PENDING");
+        List<Appointment> pending = appointmentRepo.findDoctorAndStatus(doctorId, AppointmentStatus.APPOINTMENT_STATUS_PENDING.name());
         for (Appointment a : pending) {
             if (clinicId.equals(a.getClinicId())) {
                 appointmentRepo.postpone(a.getAppointmentDate(), a);

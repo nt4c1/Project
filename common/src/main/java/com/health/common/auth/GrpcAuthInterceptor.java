@@ -87,6 +87,10 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
                     .withValue(EMAIL_KEY, credentials[0])
                     .withValue(PASSWORD_KEY, credentials[1]);
 
+            if (credentials[0].isBlank() || credentials[1].isBlank()) {
+                throw new IllegalArgumentException("Empty credentials");
+            }
+
             return Contexts.interceptCall(context, call, headers, next);
 
         } catch (Exception e) {

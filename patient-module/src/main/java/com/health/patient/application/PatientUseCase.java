@@ -124,7 +124,19 @@ public class PatientUseCase implements PatientInterface {
 
     @Override
     public void deletePatient(@NotNull UUID patientId, @NotBlank @Email String email, @NotBlank String password) {
+        Patient patient = repo.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + email));
+
+        if (!patient.getId().equals(patientId)) {
+            throw new InvalidArgumentException("Patient ID does not match email");
+        }
+
+        if (!BCrypt.checkpw(password, patient.getPasswordHash())) {
+            throw new InvalidArgumentException("Invalid credentials");
+        }
+
         repo.deletePatient(patientId);
+        natsClient.sendPatientDeleted(patientId.toString());
     }
 
     @Override

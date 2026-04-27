@@ -123,6 +123,7 @@ CREATE TABLE doctors_by_location (
                                      longitude      DOUBLE,
                                      location_text  TEXT,
                                      is_active      BOOLEAN,
+                                     is_deleted     BOOLEAN,
                                      PRIMARY KEY (geohash_prefix, clinic_id, doctor_id)
 );
 

@@ -18,6 +18,11 @@ public class PatientNatsListener {
         log.info("Received NATS message: Patient updated with ID: {}", patientId);
     }
 
+    @Subject("patient.deleted")
+    public void onPatientDeleted(String patientId) {
+        log.info("Received NATS message: Patient deleted with ID: {}", patientId);
+    }
+
     @Subject("appointment.created")
     public void onAppointmentCreated(String appointmentId) {
         log.info("Received NATS message: Appointment created with ID: {}", appointmentId);

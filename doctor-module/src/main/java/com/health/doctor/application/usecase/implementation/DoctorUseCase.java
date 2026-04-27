@@ -222,7 +222,7 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public void updateDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password, @NotBlank String phone) {
+    public void updateDoctor(@NotNull UUID doctorId, @NotBlank String email, @NotBlank String password, @NotBlank String phone) {
         repo.updateDoctor(doctorId, email, password, phone);
         natsClient.sendDoctorUpdated(doctorId.toString());
     }
@@ -254,9 +254,20 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public void deleteDoctor(@NotNull UUID doctorId, @NotBlank @Email String email, @NotBlank @Size(min = 6) String password) {
+    public void deleteDoctor(@NotNull UUID doctorId, @NotBlank String email, @NotBlank String password) {
+        DoctorCredentials credentials = credentialsRepo.findByEmail(email)
+                .orElseThrow(() -> new NotFoundException("Doctor not found with email: " + email));
+
+        if (!credentials.getDoctorId().equals(doctorId)) {
+            throw new InvalidArgumentException("Doctor ID does not match email");
+        }
+
+        if (!BCrypt.checkpw(password, credentials.getPasswordHash())) {
+            throw new InvalidArgumentException("Invalid credentials");
+        }
+
         repo.deleteDoctor(doctorId, email, password);
-        natsClient.sendDoctorUpdated(doctorId.toString());
+        natsClient.sendDoctorDeleted(doctorId.toString());
     }
 
     @Override
