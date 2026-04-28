@@ -1,7 +1,6 @@
 package com.health.doctor.domain.ports;
 
 import com.health.doctor.domain.model.Doctor;
-import com.health.doctor.domain.model.DoctorCredentials;
 import com.health.doctor.domain.model.Location;
 
 import java.util.List;
@@ -32,4 +31,7 @@ public interface DoctorRepositoryPort {
 
     Optional<Doctor> findActive(UUID doctorId);
 
+    boolean isDeleted(UUID doctorId);
+
+    void reactivate(Doctor doctor);
 }

@@ -20,8 +20,14 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
     private final CqlSession session;
     private final PreparedStatement insertSchedule;
     private final PreparedStatement insertScheduleByClinic;
+    private final PreparedStatement updateSchedule;
+    private final PreparedStatement updateScheduleByClinic;
     private final PreparedStatement selectByDoctorAndClinic;
     private final PreparedStatement selectByDoctors;
+    private final PreparedStatement deleteByDoctor;
+    private final PreparedStatement deleteByClinicSchedule;
+    private final PreparedStatement deleteByDoctorOverrides;
+    private final PreparedStatement deleteByDoctorUnavailability;
     private final RedisUtil redisUtil;
     private final String CACHE_SCHEDULE_PREFIX = "schedule:";
 
@@ -39,18 +45,39 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
                         " start_time, end_time, slot_duration_minutes) " +
                         "VALUES (?,?,?,?,?,?,?)"
         );
+        this.updateSchedule = session.prepare(
+                "UPDATE doctor_service.doctor_schedules SET working_days=?, start_time=?, end_time=?, " +
+                        " slot_duration_minutes=?, max_appointments_day=?, updated_at=? " +
+                        "WHERE doctor_id=? AND clinic_id=?"
+        );
+        this.updateScheduleByClinic = session.prepare(
+                "UPDATE doctor_service.schedules_by_clinic SET doctor_name=?, working_days=?, " +
+                        " start_time=?, end_time=?, slot_duration_minutes=? " +
+                        "WHERE clinic_id=? AND doctor_id=?"
+        );
         this.selectByDoctorAndClinic = session.prepare(
                 "SELECT * FROM doctor_service.doctor_schedules WHERE doctor_id=? AND clinic_id=?"
         );
         this.selectByDoctors = session.prepare(
                 "SELECT * FROM doctor_service.doctor_schedules WHERE doctor_id IN ?"
         );
+        this.deleteByDoctor = session.prepare(
+                "DELETE FROM doctor_service.doctor_schedules WHERE doctor_id = ?"
+        );
+        this.deleteByClinicSchedule = session.prepare(
+                "DELETE FROM doctor_service.schedules_by_clinic WHERE clinic_id = ? AND doctor_id = ?"
+        );
+        this.deleteByDoctorOverrides = session.prepare(
+                "DELETE FROM doctor_service.doctor_schedule_overrides WHERE doctor_id = ?"
+        );
+        this.deleteByDoctorUnavailability = session.prepare(
+                "DELETE FROM doctor_service.doctor_unavailability WHERE doctor_id = ?"
+        );
         this.redisUtil = redisUtil;
     }
 
     @Override
     public void save(DoctorSchedule schedule) {
-
         String cacheKey = CACHE_SCHEDULE_PREFIX + schedule.getDoctorId();
         redisUtil.deleteAsync(cacheKey);
 
@@ -99,7 +126,33 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
                 .collect(Collectors.toSet());
 
         Instant now = Instant.now();
-        save(schedule);
+
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(updateSchedule.bind(
+                        days,
+                        schedule.getStartTime(),
+                        schedule.getEndTime(),
+                        schedule.getSlotDurationMinutes(),
+                        schedule.getMaxAppointmentsPerDay(),
+                        now,
+                        schedule.getDoctorId(),
+                        schedule.getClinicId()
+                ));
+
+        if (schedule.getClinicId() != null) {
+            batch.addStatement(updateScheduleByClinic.bind(
+                    schedule.getDoctorName(),
+                    days,
+                    schedule.getStartTime(),
+                    schedule.getEndTime(),
+                    schedule.getSlotDurationMinutes(),
+                    schedule.getClinicId(),
+                    schedule.getDoctorId()
+            ));
+        }
+
+        session.execute(batch.build());
+        redisUtil.setAsync(cacheKey, schedule, 3600);
     }
 
     @Override
@@ -138,6 +191,29 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
             list.add(mapRowToSchedule(r));
         }
         return list;
+    }
+
+    @Override
+    public void hardDeleteByDoctor(UUID doctorId) {
+        String cacheKey = CACHE_SCHEDULE_PREFIX + doctorId;
+        redisUtil.deleteAsync(cacheKey);
+
+        // Find all schedules for this doctor (they might have multiple clinics)
+        ResultSet rs = session.execute(selectByDoctors.bind(List.of(doctorId)));
+        
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED);
+        batch.addStatement(deleteByDoctor.bind(doctorId));
+        batch.addStatement(deleteByDoctorOverrides.bind(doctorId));
+        batch.addStatement(deleteByDoctorUnavailability.bind(doctorId));
+
+        for (Row row : rs) {
+            UUID clinicId = row.getUuid("clinic_id");
+            if (clinicId != null) {
+                batch.addStatement(deleteByClinicSchedule.bind(clinicId, doctorId));
+            }
+        }
+
+        session.execute(batch.build());
     }
 
     private DoctorSchedule mapRowToSchedule(Row r) {

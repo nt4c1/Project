@@ -55,8 +55,20 @@ public class PatientUseCase implements PatientInterface {
             throw new InvalidArgumentException("Invalid password format");
         if(!ValidationUtil.isValidPhone(phone))
             throw new InvalidArgumentException("Invalid phone number format");
-        if (repo.findByEmail(email).isPresent())
+        
+        Optional<Patient> existing = repo.findByEmail(email);
+        if (existing.isPresent()) {
+            Patient p = existing.get();
+            if (repo.isDeleted(p.getId())) {
+                log.info("Reactivating soft-deleted patient: {}", p.getId());
+                String hash = BCrypt.hashpw(password, BCrypt.gensalt());
+                Patient updated = new Patient(p.getId(), name, email, phone, hash);
+                repo.reactivate(updated);
+                natsClient.sendPatientCreated(p.getId().toString());
+                return p.getId();
+            }
             throw new AlreadyExistsException("Patient already exists with email: " + email);
+        }
 
         UUID   id   = UUID.randomUUID();
         String hash = BCrypt.hashpw(password, BCrypt.gensalt());
@@ -76,6 +88,10 @@ public class PatientUseCase implements PatientInterface {
     public TokenResponse loginPatient(@NotBlank @Email String email, @NotBlank String password) {
         Patient patient = repo.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Patient not found: " + email));
+
+        if (repo.isDeleted(patient.getId())) {
+            throw new NotFoundException("Patient not found: " + email);
+        }
 
         if (!BCrypt.checkpw(password, patient.getPasswordHash()))
             throw new InvalidArgumentException("Invalid credentials");

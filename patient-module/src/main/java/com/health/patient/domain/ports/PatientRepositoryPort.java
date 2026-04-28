@@ -17,4 +17,8 @@ public interface PatientRepositoryPort {
     void updatePassword(UUID patientId, String passwordHash);
 
     void deletePatient(UUID patientId);
+
+    boolean isDeleted(UUID patientId);
+
+    void reactivate(Patient patient);
 }

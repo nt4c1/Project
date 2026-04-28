@@ -11,4 +11,5 @@ public interface ScheduleRepositoryPort {
     void update(DoctorSchedule schedule);
     Optional<DoctorSchedule> findByDoctorAndClinic(UUID doctorId, UUID clinicId);
     List<DoctorSchedule> findByDoctors(List<UUID> doctorIds);
+    void hardDeleteByDoctor(UUID doctorId);
 }

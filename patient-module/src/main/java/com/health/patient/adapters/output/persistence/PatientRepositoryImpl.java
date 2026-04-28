@@ -33,6 +33,8 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
     private final PreparedStatement selectAppointmentsByPatient;
     private final PreparedStatement selectAllAppointmentsByPatient;
     private final PreparedStatement softDeletePatient;
+    private final PreparedStatement selectPatientByIdWithDeleted;
+    private final PreparedStatement reactivatePatient;
 
     public PatientRepositoryImpl(CqlSession session, Provider<AppointmentRepositoryPort> appointmentRepoProvider) {
         this.session = session;
@@ -50,6 +52,9 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         this.selectPatientById = session.prepare(
                 "SELECT * FROM doctor_service.patients WHERE patient_id=? AND is_deleted = false ALLOW FILTERING"
         );
+        this.selectPatientByIdWithDeleted = session.prepare(
+                "SELECT * FROM doctor_service.patients WHERE patient_id=?"
+        );
         this.selectIdByEmail = session.prepare(
                 "SELECT patient_id FROM doctor_service.patients_by_email WHERE email=?"
         );
@@ -64,6 +69,9 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         );
         this.softDeletePatient = session.prepare(
                 "UPDATE doctor_service.patients SET is_deleted = true, updated_at = ? WHERE patient_id = ?"
+        );
+        this.reactivatePatient = session.prepare(
+                "UPDATE doctor_service.patients SET name = ?, email = ?, phone = ?, password_hash = ?, is_deleted = false, updated_at = ? WHERE patient_id = ?"
         );
         this.selectAppointmentsByPatient = session.prepare(
                 "SELECT appointment_id, appointment_date, scheduled_time, doctor_id, status " +
@@ -104,14 +112,20 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         return Optional.of(mapRow(r));
     }
 
+    public Optional<Patient> findByIdWithDeleted(UUID patientId) {
+        Row r = session.execute(selectPatientByIdWithDeleted.bind(patientId)).one();
+        if (r == null) return Optional.empty();
+        return Optional.of(mapRow(r));
+    }
+
     @Override
     public Optional<Patient> findByEmail(String email) {
         // Step 1: O(1) partition read to resolve patient_id
         Row lookup = session.execute(selectIdByEmail.bind(email)).one();
         if (lookup == null) return Optional.empty();
 
-        // Step 2: fetch full patient row
-        return findById(lookup.getUuid("patient_id"));
+        // Step 2: fetch full patient row (including deleted ones for reactivation)
+        return findByIdWithDeleted(lookup.getUuid("patient_id"));
     }
 
     @Override
@@ -160,6 +174,20 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
         // Update all associated appointments status to DELETED
         appointmentRepoProvider.get().deleteAppointmentsByPatient(patientId);
+    }
+
+    @Override
+    public boolean isDeleted(UUID patientId) {
+        Row r = session.execute(selectPatientByIdWithDeleted.bind(patientId)).one();
+        return r != null && r.getBoolean("is_deleted");
+    }
+
+    @Override
+    public void reactivate(Patient patient) {
+        session.execute(reactivatePatient.bind(
+                patient.getName(), patient.getEmail(), patient.getPhone(),
+                patient.getPasswordHash(), Instant.now(), patient.getId()
+        ));
     }
 
 }

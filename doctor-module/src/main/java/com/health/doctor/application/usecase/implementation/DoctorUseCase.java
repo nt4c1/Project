@@ -68,9 +68,32 @@ public class DoctorUseCase implements DoctorInterface {
                              @NotBlank  String password,
                              @NotBlank String phone) {
 
-        if (credentialsRepo.findByEmail(email).isPresent())
+        Optional<DoctorCredentials> existingCreds = credentialsRepo.findByEmail(email);
+        if (existingCreds.isPresent()) {
+            UUID existingId = existingCreds.get().getDoctorId();
+            if (repo.isDeleted(existingId)) {
+                log.info("Reactivating soft-deleted doctor: {}", existingId);
+                String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
+                Instant now = DateTimeUtils.now().toInstant();
+                
+                Doctor updatedDoctor = new Doctor(existingId, name, clinicIds, type, specialization, phone, true, false, now, now);
+                repo.reactivate(updatedDoctor);
+                
+                credentialsRepo.updatePassword(existingId, passwordHash);
+                
+                if (clinicIds != null && !clinicIds.isEmpty()) {
+                    for (UUID clinicId : clinicIds) {
+                        Location local = clinicRepo.getLocation(clinicId);
+                        if (local != null) {
+                            repo.updateLocation(existingId, clinicId, local);
+                        }
+                    }
+                }
+                natsClient.sendDoctorCreated(existingId.toString());
+                return existingId;
+            }
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
-
+        }
         ValidationUtil.validateEmail(email);
         ValidationUtil.validatePhone(phone);
         ValidationUtil.validatePassword(password);

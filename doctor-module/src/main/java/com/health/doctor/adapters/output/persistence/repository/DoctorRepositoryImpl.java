@@ -7,6 +7,7 @@ import com.health.common.exception.BookingException;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
+import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import com.health.common.redis.RedisUtil;
 import com.health.doctor.mapper.MapperClass;
 import jakarta.inject.Provider;
@@ -31,6 +32,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final CqlSession session;
     private final RedisUtil redisUtil;
     private final Provider<AppointmentRepositoryPort> appointmentRepoProvider;
+    private final ScheduleRepositoryPort scheduleRepo;
 
     // ── Prepared statements ────────────────────────
     private final PreparedStatement insertDoctor;
@@ -54,14 +56,19 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final PreparedStatement softDeleteDoctorIndividual;
     private final PreparedStatement softDeleteDoctorLocation;
     private final PreparedStatement selectGeoPrefixByDoctor;
+    private final PreparedStatement selectDoctorByIdWithDeleted;
+    private final PreparedStatement reactivateDoctor;
+    private final PreparedStatement reactivateDoctorIndividual;
+    private final PreparedStatement reactivateDoctorClinic;
     // ─────────────────────────────────────────────
 
 
 
-    public DoctorRepositoryImpl(CqlSession session, RedisUtil redisUtil, Provider<AppointmentRepositoryPort> appointmentRepoProvider) {
+    public DoctorRepositoryImpl(CqlSession session, RedisUtil redisUtil, Provider<AppointmentRepositoryPort> appointmentRepoProvider, ScheduleRepositoryPort scheduleRepo) {
         this.session = session;
         this.redisUtil = redisUtil;
         this.appointmentRepoProvider = appointmentRepoProvider;
+        this.scheduleRepo = scheduleRepo;
 
         // doctors — canonical profile
         insertDoctor = session.prepare(
@@ -135,6 +142,53 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .whereColumn("is_deleted").isEqualTo(literal(false))
                         .allowFiltering()
+                        .build()
+        );
+
+        selectDoctorByIdWithDeleted = session.prepare(
+                selectFrom("doctor_service", "doctors")
+                        .all()
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .build()
+        );
+
+        reactivateDoctor = session.prepare(
+                update("doctor_service", "doctors")
+                        .setColumn("name", bindMarker("name"))
+                        .setColumn("clinic_ids", bindMarker("clinic_ids"))
+                        .setColumn("type", bindMarker("type"))
+                        .setColumn("specialization", bindMarker("specialization"))
+                        .setColumn("phone", bindMarker("phone"))
+                        .setColumn("is_active", bindMarker("is_active"))
+                        .setColumn("is_deleted", literal(false))
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .build()
+        );
+
+        reactivateDoctorIndividual = session.prepare(
+                update("doctor_service", "doctors_by_individual")
+                        .setColumn("name", bindMarker("name"))
+                        .setColumn("type", bindMarker("type"))
+                        .setColumn("specialization", bindMarker("specialization"))
+                        .setColumn("phone", bindMarker("phone"))
+                        .setColumn("is_active", bindMarker("is_active"))
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .build()
+        );
+
+        reactivateDoctorClinic = session.prepare(
+                update("doctor_service", "doctors_by_clinic")
+                        .setColumn("name", bindMarker("name"))
+                        .setColumn("type", bindMarker("type"))
+                        .setColumn("specialization", bindMarker("specialization"))
+                        .setColumn("phone", bindMarker("phone"))
+                        .setColumn("is_active", bindMarker("is_active"))
+                        .setColumn("is_deleted", literal(false))
+                        .setColumn("updated_at", bindMarker("updated_at"))
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
@@ -623,11 +677,60 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         session.execute(batch.build());
 
+        // Hard delete the schedule
+        scheduleRepo.hardDeleteByDoctor(doctorId);
+
         // Update all associated appointments status to DELETED
         appointmentRepoProvider.get().deleteAppointmentsByDoctor(doctorId);
 
         redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
         clearLocationCache();
+    }
+
+    @Override
+    public boolean isDeleted(UUID doctorId) {
+        Row r = session.execute(selectDoctorByIdWithDeleted.bind().setUuid("doctor_id", doctorId)).one();
+        return r != null && r.getBoolean("is_deleted");
+    }
+
+    @Override
+    public void reactivate(Doctor d) {
+        Instant now = Instant.now();
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(reactivateDoctor.bind()
+                        .setUuid("doctor_id", d.getId())
+                        .setString("name", d.getName())
+                        .setList("clinic_ids", d.getClinicIds(), UUID.class)
+                        .setString("type", d.getType().name())
+                        .setString("specialization", d.getSpecialization())
+                        .setString("phone", d.getPhone())
+                        .setBoolean("is_active", d.isActive())
+                        .setInstant("updated_at", now));
+
+        if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
+            batch.addStatement(reactivateDoctorIndividual.bind()
+                    .setUuid("doctor_id", d.getId())
+                    .setString("name", d.getName())
+                    .setString("type", d.getType().name())
+                    .setString("specialization", d.getSpecialization())
+                    .setString("phone", d.getPhone())
+                    .setBoolean("is_active", d.isActive())
+                    .setInstant("updated_at", now));
+        } else {
+            for (UUID clinicId : d.getClinicIds()) {
+                batch.addStatement(reactivateDoctorClinic.bind()
+                        .setUuid("clinic_id", clinicId)
+                        .setUuid("doctor_id", d.getId())
+                        .setString("name", d.getName())
+                        .setString("type", d.getType().name())
+                        .setString("specialization", d.getSpecialization())
+                        .setString("phone", d.getPhone())
+                        .setBoolean("is_active", d.isActive())
+                        .setInstant("updated_at", now));
+            }
+        }
+        session.execute(batch.build());
+        redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + d.getId());
     }
 
     @Override
