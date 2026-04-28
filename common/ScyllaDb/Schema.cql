@@ -215,7 +215,7 @@ CREATE TABLE appointments_by_id (
                                     clinic_id        UUID,
                                     appointment_date DATE,
                                     scheduled_time   TIMESTAMP,
-                                    status           TEXT,        -- SCHEDULED | CONFIRMED | CANCELLED | COMPLETED | NO_SHOW
+                                    status           TEXT,        -- SCHEDULED | CONFIRMED | CANCELLED | COMPLETED | NO_SHOW | CANCELLED
                                     reason_for_visit TEXT,
                                     doctor_notes     TEXT,
                                     cancellation_reason TEXT,

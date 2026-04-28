@@ -39,6 +39,7 @@ public class DoctorUseCase implements DoctorInterface {
     private final CredentialsRepositoryPort credentialsRepo;
     private final ClinicRepositoryPort clinicRepo;
     private final ScheduleRepositoryPort scheduleRepo;
+    private final AppointmentRepositoryPort appointmentRepo;
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
     private final DoctorNatsClient natsClient;
@@ -47,6 +48,7 @@ public class DoctorUseCase implements DoctorInterface {
                          CredentialsRepositoryPort credentialsRepo,
                          ClinicRepositoryPort clinicRepo,
                          ScheduleRepositoryPort scheduleRepo,
+                         AppointmentRepositoryPort appointmentRepo,
                          JwtProvider jwtProvider,
                          LocationService locationService,
                          DoctorNatsClient natsClient) {
@@ -54,6 +56,7 @@ public class DoctorUseCase implements DoctorInterface {
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
         this.scheduleRepo = scheduleRepo;
+        this.appointmentRepo = appointmentRepo;
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
         this.natsClient = natsClient;
@@ -272,6 +275,44 @@ public class DoctorUseCase implements DoctorInterface {
             if (local != null) {
                 repo.updateLocation(doctorId, clinicId, local);
             }
+        }
+        natsClient.sendDoctorUpdated(doctorId.toString());
+    }
+
+    @Override
+    public void removeClinicFromDoctor(@NotNull UUID doctorId, @NotNull List<UUID> clinicIds) {
+        if (clinicIds == null || clinicIds.isEmpty()) return;
+
+        Doctor doctor = repo.findById(doctorId)
+                .orElseThrow(() -> new NotFoundException("Doctor not found: " + doctorId));
+
+        List<UUID> existingClinics = doctor.getClinicIds() != null ? doctor.getClinicIds() : Collections.emptyList();
+
+        List<UUID> toRemove = clinicIds.stream()
+                .filter(existingClinics::contains)
+                .distinct()
+                .toList();
+
+        if (toRemove.isEmpty()) return;
+
+        // Check for active appointments (Accepted or Postponed) at these clinics
+        List<Appointment> allAppointments = appointmentRepo.findByDoctor(doctorId);
+        
+        for (UUID clinicId : toRemove) {
+            boolean hasActive = allAppointments.stream()
+                    .filter(a -> clinicId.equals(a.getClinicId()))
+                    .anyMatch(a -> a.getStatus() == AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED || 
+                                   a.getStatus() == AppointmentStatus.APPOINTMENT_STATUS_POSTPONED);
+            
+            if (hasActive) {
+                throw new com.health.common.exception.BookingException(
+                        "Cannot remove clinic " + clinicId + " because there are Accepted or Postponed appointments. " +
+                        "Please complete or cancel them first.");
+            }
+        }
+
+        for (UUID clinicId : toRemove) {
+            repo.removeClinicId(doctorId, clinicId);
         }
         natsClient.sendDoctorUpdated(doctorId.toString());
     }

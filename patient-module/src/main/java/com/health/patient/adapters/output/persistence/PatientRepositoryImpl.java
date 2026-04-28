@@ -7,12 +7,9 @@ import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.patient.domain.model.Patient;
 import com.health.patient.domain.ports.PatientRepositoryPort;
-import com.health.patient.mapper.Mapper;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
-
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -120,11 +117,11 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
     @Override
     public Optional<Patient> findByEmail(String email) {
-        // Step 1: O(1) partition read to resolve patient_id
+        // partition read to resolve patient_id
         Row lookup = session.execute(selectIdByEmail.bind(email)).one();
         if (lookup == null) return Optional.empty();
 
-        // Step 2: fetch full patient row (including deleted ones for reactivation)
+        // fetch full patient row (including deleted ones for reactivation)
         return findByIdWithDeleted(lookup.getUuid("patient_id"));
     }
 

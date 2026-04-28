@@ -42,6 +42,8 @@ public interface DoctorInterface {
 
     void addClinicToDoctor(@NotNull UUID doctorId, @NotEmpty List<UUID> clinicIds);
 
+    void removeClinicFromDoctor(@NotNull UUID doctorId, @NotEmpty List<UUID> clinicIds);
+
     void deleteDoctor(@NotNull UUID doctorId,
                       @NotBlank  String email,
                       @NotBlank  String password);

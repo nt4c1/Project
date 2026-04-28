@@ -171,8 +171,31 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         });
     }
 
-            @Override
-            public void deleteDoctor(DeleteDoctorRequest request,
+    @Override
+    public void removeClinic(RemoveClinicRequest request,
+                             StreamObserver<RemoveClinicResponse> observer) {
+        handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+            if (request.getClinicIdsList().isEmpty()) throw new DomainException("Clinic IDs are required", Status.INVALID_ARGUMENT);
+
+            ensureSelf(request.getDoctorId());
+            List<UUID> clinicIds = request.getClinicIdsList().stream()
+                    .filter(raw -> raw != null && !raw.isBlank())
+                    .map(raw -> UUID.fromString(raw.trim()))
+                    .collect(Collectors.toList());
+
+            doctorUseCase.removeClinicFromDoctor(UUID.fromString(request.getDoctorId()), clinicIds);
+
+            observer.onNext(RemoveClinicResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Clinics removed successfully")
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void deleteDoctor(DeleteDoctorRequest request,
                               StreamObserver<DeleteDoctorResponse> observer){
         handle(observer, () -> {
             if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);

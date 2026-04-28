@@ -22,6 +22,7 @@ service DoctorGrpcService {
   rpc UpdateLocation           (UpdateLocationRequest)       returns (UpdateLocationResponse);
   rpc UpdateDoctor             (UpdateDoctorRequest)         returns (UpdateDoctorResponse);
   rpc AddClinic                (AddClinicRequest)            returns (AddClinicResponse);
+  rpc RemoveClinic             (RemoveClinicRequest)         returns (RemoveClinicResponse);
   rpc DeleteDoctor             (DeleteDoctorRequest)         returns (DeleteDoctorResponse);
 
   // Clinic
@@ -95,6 +96,16 @@ message AddClinicRequest {
 }
 
 message AddClinicResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message RemoveClinicRequest {
+  string doctor_id = 1;
+  repeated string clinic_ids = 2;
+}
+
+message RemoveClinicResponse {
   bool success = 1;
   string message = 2;
 }

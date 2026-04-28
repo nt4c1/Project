@@ -29,6 +29,8 @@ public interface DoctorRepositoryPort {
 
     void addClinicId(UUID doctorId, UUID clinicId);
 
+    void removeClinicId(UUID doctorId, UUID clinicId);
+
     Optional<Doctor> findActive(UUID doctorId);
 
     boolean isDeleted(UUID doctorId);

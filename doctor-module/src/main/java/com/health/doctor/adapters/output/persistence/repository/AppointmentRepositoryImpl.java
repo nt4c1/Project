@@ -454,6 +454,18 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     }
 
     @Override
+    public void deleteAppointmentsByDoctorAndClinic(UUID doctorId, UUID clinicId) {
+        ResultSet rs = session.execute(selectByDoctorAll.bind(doctorId));
+        String newStatus = AppointmentStatus.APPOINTMENT_STATUS_CANCELLED.name();
+        for (Row r : rs) {
+            if (clinicId.equals(r.getUuid("clinic_id"))) {
+                Appointment a = mapDoctorRow(r);
+                updateStatus(a, newStatus);
+            }
+        }
+    }
+
+    @Override
     public void deleteAppointmentsByPatient(UUID patientId) {
         ResultSet rs = session.execute(selectByPatientAll.bind(patientId));
         String newStatus = AppointmentStatus.APPOINTMENT_STATUS_DELETED.name();

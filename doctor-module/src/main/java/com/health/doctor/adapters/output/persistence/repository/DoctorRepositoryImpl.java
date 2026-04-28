@@ -56,6 +56,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final PreparedStatement softDeleteDoctorIndividual;
     private final PreparedStatement softDeleteDoctorLocation;
     private final PreparedStatement selectGeoPrefixByDoctor;
+    private final PreparedStatement selectGeoPrefixByDoctorAndClinic;
     private final PreparedStatement selectDoctorByIdWithDeleted;
     private final PreparedStatement reactivateDoctor;
     private final PreparedStatement reactivateDoctorIndividual;
@@ -330,6 +331,15 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 selectFrom("doctor_service", "doctors_by_location")
                         .columns("geohash_prefix", "clinic_id")
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .allowFiltering()
+                        .build()
+        );
+
+        selectGeoPrefixByDoctorAndClinic = session.prepare(
+                selectFrom("doctor_service", "doctors_by_location")
+                        .columns("geohash_prefix", "clinic_id")
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
                         .allowFiltering()
                         .build()
         );
@@ -781,6 +791,72 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
         session.execute(batch.build());
         redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
+    }
+
+    @Override
+    public void removeClinicId(UUID doctorId, UUID clinicId) {
+        Optional<Doctor> docOpt = findById(doctorId);
+        if (docOpt.isEmpty()) return;
+        Doctor d = docOpt.get();
+
+        Instant now = Instant.now();
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED);
+
+        // 1. Remove from clinic_ids list
+        batch.addStatement(
+                update("doctor_service", "doctors")
+                        .remove("clinic_ids", literal(Collections.singletonList(clinicId)))
+                        .setColumn("updated_at", literal(now))
+                        .whereColumn("doctor_id").isEqualTo(literal(doctorId))
+                        .build()
+        );
+
+        // 2. Soft delete from doctors_by_clinic
+        batch.addStatement(softDeleteDoctorClinic.bind()
+                .setInstant("updated_at", now)
+                .setUuid("clinic_id", clinicId)
+                .setUuid("doctor_id", doctorId));
+
+        // 3. Soft delete from doctors_by_location
+        ResultSet locs = session.execute(selectGeoPrefixByDoctorAndClinic.bind()
+                .setUuid("doctor_id", doctorId)
+                .setUuid("clinic_id", clinicId));
+        for (Row row : locs) {
+            batch.addStatement(softDeleteDoctorLocation.bind()
+                    .setString("geohash_prefix", row.getString("geohash_prefix"))
+                    .setUuid("clinic_id", clinicId)
+                    .setUuid("doctor_id", doctorId));
+        }
+
+        // 4. Handle conversion back to Individual Doctor if no clinics left
+        List<UUID> remaining = d.getClinicIds();
+        if (remaining != null && remaining.size() == 1 && remaining.contains(clinicId)) {
+            // Conversion to Individual
+            batch.addStatement(
+                    update("doctor_service", "doctors")
+                            .setColumn("type", literal(DoctorType.DOCTOR_TYPE_INDIVIDUAL.name()))
+                            .whereColumn("doctor_id").isEqualTo(literal(doctorId))
+                            .build()
+            );
+            // Re-insert into doctors_by_individual
+            batch.addStatement(insertDoctorByIndividual.bind()
+                    .setUuid("doctor_id", d.getId())
+                    .setString("name", d.getName())
+                    .setString("type", DoctorType.DOCTOR_TYPE_INDIVIDUAL.name())
+                    .setString("specialization", d.getSpecialization())
+                    .setString("phone", d.getPhone())
+                    .setBoolean("is_active", d.isActive())
+                    .setBoolean("is_deleted", false)
+                    .setInstant("updated_at", now));
+        }
+
+        session.execute(batch.build());
+
+        // Cancel appointments at this clinic
+        appointmentRepoProvider.get().deleteAppointmentsByDoctorAndClinic(doctorId, clinicId);
+
+        redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
+        clearLocationCache();
     }
 
     @Override

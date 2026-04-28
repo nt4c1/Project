@@ -43,5 +43,7 @@ public interface AppointmentRepositoryPort {
 
     void deleteAppointmentsByDoctor(UUID doctorId);
 
+    void deleteAppointmentsByDoctorAndClinic(UUID doctorId, UUID clinicId);
+
     void deleteAppointmentsByPatient(UUID patientId);
     }
