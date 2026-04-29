@@ -3,7 +3,6 @@ package com.health.doctor.application.usecase.implementation;
 import com.health.common.exception.NotFoundException;
 import com.health.doctor.application.usecase.interfaces.AppointmentInterface;
 import com.health.common.exception.InvalidArgumentException;
-import com.health.common.exception.DomainException;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.model.DoctorSchedule;
@@ -49,7 +48,7 @@ public class AppointmentUseCase implements AppointmentInterface {
                                    @NotNull LocalTime time,
                                    @NotBlank String reasonForVisit) {
 
-        // Trigger all database checks in parallel
+        // Trigger all database checks in parallel CompletableFuture for faster response
         java.util.concurrent.CompletableFuture<Optional<DoctorSchedule>> scheduleFuture = 
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> scheduleRepo.findByDoctorAndClinic(doctorId, clinicId));
         

@@ -1,0 +1,4 @@
+{
+  "doctorId": "{{ faker.random.uuid }}",
+  "clinicId": "{{ faker.random.uuid }}"
+}

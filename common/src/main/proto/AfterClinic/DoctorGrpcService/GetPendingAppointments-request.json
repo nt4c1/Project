@@ -1,0 +1,4 @@
+{
+  "doctorId": "{{ faker.random.uuid }}",
+  "date": "demand-driven"
+}

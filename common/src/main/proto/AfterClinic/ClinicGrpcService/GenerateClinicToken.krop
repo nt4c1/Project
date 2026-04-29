@@ -1,0 +1,14 @@
+{
+  "details": {
+    "methodFqn": "ClinicGrpcService.GenerateClinicToken"
+  },
+  "requests": [
+    {
+      "location": "GenerateClinicToken-request.json"
+    }
+  ],
+  "operationType": "unary",
+  "invokerName": "grpc",
+  "importStreamId": "c2adbedf-4d02-4fea-8401-057fc12f189d",
+  "authId": "f83bf48f-8997-4934-b31f-8d598c126835"
+}

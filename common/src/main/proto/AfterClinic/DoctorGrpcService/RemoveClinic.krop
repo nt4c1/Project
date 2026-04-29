@@ -1,0 +1,13 @@
+{
+  "details": {
+    "methodFqn": "DoctorGrpcService.RemoveClinic"
+  },
+  "requests": [
+    {
+      "location": "RemoveClinic-request.json"
+    }
+  ],
+  "operationType": "unary",
+  "invokerName": "grpc",
+  "importStreamId": "c2adbedf-4d02-4fea-8401-057fc12f189d"
+}

@@ -1,0 +1,12 @@
+{
+  "doctorId": "{{ faker.random.uuid }}",
+  "clinicId": "{{ faker.random.uuid }}",
+  "workingDays": [
+    "Games & Outdoors Unbranded Frozen Bacon",
+    "Mews Buckinghamshire"
+  ],
+  "startTime": "SDD invoice Sleek",
+  "endTime": "approach",
+  "slotDurationMinutes": 589,
+  "maxAppointmentsDay": 210
+}

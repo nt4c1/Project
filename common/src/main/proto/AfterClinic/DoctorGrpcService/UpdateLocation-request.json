@@ -1,0 +1,5 @@
+{
+  "doctorId": "{{ faker.random.uuid }}",
+  "clinicId": "{{ faker.random.uuid }}",
+  "locationText": "solid state intangible overriding"
+}

@@ -8,7 +8,6 @@ import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.DoctorRepositoryPort;
 import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.*;
-import com.health.grpc.common.ClinicMessage;
 import com.health.grpc.common.DoctorMessage;
 import com.health.grpc.doctor.*;
 import io.grpc.Status;
@@ -21,30 +20,24 @@ import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
-
-
 import static com.health.common.auth.GrpcAuthInterceptor.*;
-import static com.health.common.auth.GrpcAuthInterceptor.ROLE_KEY;
-import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
 
 @Slf4j
 @GrpcService
 public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBase {
 
     private final AppointmentInterface      appointmentsUseCase;
-    private final ClinicInterface           clinicUseCase;
     private final DoctorInterface           doctorUseCase;
     private final ScheduleInterface         scheduleUseCase;
     private final DoctorRepositoryPort      doctorRepo;
     private final AppointmentRepositoryPort appointmentRepo;
+
     public DoctorGrpcApi(AppointmentInterface appointmentsUseCase,
-                         ClinicInterface clinicUseCase,
                          DoctorInterface doctorUseCase,
                          ScheduleInterface scheduleUseCase,
                          DoctorRepositoryPort doctorRepo,
                          AppointmentRepositoryPort appointmentRepo) {
         this.appointmentsUseCase = appointmentsUseCase;
-        this.clinicUseCase       = clinicUseCase;
         this.doctorUseCase       = doctorUseCase;
         this.scheduleUseCase     = scheduleUseCase;
         this.doctorRepo          = doctorRepo;
@@ -221,93 +214,41 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
             if (request.getLocationText().isBlank()) throw new DomainException("Location text is required", Status.INVALID_ARGUMENT);
 
-            ensureSelf(request.getDoctorId());
-
+            String role = ROLE_KEY.get();
+            String authId = USER_ID_KEY.get();
             UUID doctorId = UUID.fromString(request.getDoctorId());
-            UUID clinicId = null;
-            if (!request.getClinicId().isBlank()) {
-                clinicId = UUID.fromString(request.getClinicId());
+            UUID clinicId = request.getClinicId().isBlank() ? null : UUID.fromString(request.getClinicId());
+
+            if (clinicId != null) {
+                // Clinic-based update: Only the clinic itself can perform this
+                if (role == null || !role.equalsIgnoreCase("Clinic")) {
+                    throw new DomainException("Access denied: Only Clinics can update location for a specific clinic ID.", Status.PERMISSION_DENIED);
+                }
+                if (authId == null || !authId.equals(clinicId.toString())) {
+                    throw new DomainException("Access denied: You can only update locations for your own clinic.", Status.PERMISSION_DENIED);
+                }
+                // Verify doctor belongs to this clinic
+                Doctor doc = doctorRepo.findById(doctorId)
+                        .orElseThrow(() -> new DomainException("Doctor not found", Status.NOT_FOUND));
+                if (doc.getClinicIds() == null || !doc.getClinicIds().contains(clinicId)) {
+                    throw new DomainException("Doctor does not belong to this clinic", Status.PERMISSION_DENIED);
+                }
             } else {
-                // If clinicId is missing, verify if the doctor is an individual type
+                // Individual doctor update: Only the doctor themselves can perform this
+                ensureSelf(request.getDoctorId());
+                // Verify they are indeed an individual doctor (no clinics)
                 Doctor doc = doctorRepo.findById(doctorId)
                         .orElseThrow(() -> new DomainException("Doctor not found", Status.NOT_FOUND));
                 if (doc.getClinicIds() != null && !doc.getClinicIds().isEmpty()) {
-                    throw new DomainException("Clinic ID is required for clinic-affiliated doctors", Status.INVALID_ARGUMENT);
+                    throw new DomainException("Clinic ID is required for clinic-affiliated doctors. Location cannot be updated as an individual.", Status.INVALID_ARGUMENT);
                 }
             }
 
-            doctorUseCase.updateDoctorLocation(
-                    doctorId,
-                    clinicId,
-                    request.getLocationText()
-            );
+            doctorUseCase.updateDoctorLocation(doctorId, clinicId, request.getLocationText());
+
             observer.onNext(UpdateLocationResponse.newBuilder()
                     .setSuccess(true)
                     .setMessage("Location updated successfully")
-                    .build());
-            observer.onCompleted();
-        });
-    }
-
-    // ── Clinic ────────────────────────────────────────────────────────────────
-
-    @Override
-    public void createClinic(CreateClinicRequest request,
-                             StreamObserver<CreateClinicResponse> observer) {
-        handle(observer, () -> {
-            if (request.getName().isBlank()) throw new DomainException("Clinic Name is required", Status.INVALID_ARGUMENT);
-            if (request.getLocationText().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
-
-            UUID id = clinicUseCase.createClinic(request.getName(), request.getLocationText());
-            Clinic clinic = clinicUseCase.getClinicById(id);
-            observer.onNext(CreateClinicResponse.newBuilder()
-                    .setClinic(ClinicMessage.newBuilder()
-                            .setClinicId(clinic.getId().toString())
-                            .setName(clinic.getName())
-                            .setLocationText(clinic.getLocationText())
-                            .build())
-                    .setMessage("Clinic created successfully")
-                    .build());
-            observer.onCompleted();
-        });
-    }
-
-    @Override
-    public void getDoctorsByClinic(GetByClinicRequest request,
-                                   StreamObserver<GetByClinicResponse> observer) {
-        handle(observer, () -> {
-            if (request.getClinicId().isBlank()) throw new DomainException("Clinic ID is required", Status.INVALID_ARGUMENT);
-            List<Doctor> doctors = doctorUseCase.getDoctorsByClinic(
-                    UUID.fromString(request.getClinicId()));
-            observer.onNext(GetByClinicResponse.newBuilder()
-                    .addAllDoctors(doctors.stream().map(MapperClass::toMsg).collect(Collectors.toList()))
-                    .build());
-            observer.onCompleted();
-        });
-    }
-
-    @Override
-    public void searchClinics(SearchClinicRequest request,
-                             StreamObserver<SearchClinicResponse> observer) {
-        handle(observer, () -> {
-            String name = request.getName();
-            int page = request.getPage();
-            int size = request.getSize() > 0 ? request.getSize() : 10;
-            
-            List<Clinic> clinics = clinicUseCase.searchClinics(name, page, size);
-            long totalElements = clinicUseCase.countClinicsByName(name);
-            int totalPages = (int) Math.ceil((double) totalElements / size);
-            
-            observer.onNext(SearchClinicResponse.newBuilder()
-                    .addAllClinics(clinics.stream()
-                            .map(c -> ClinicMessage.newBuilder()
-                                    .setClinicId(c.getId().toString())
-                                    .setName(c.getName())
-                                    .setLocationText(c.getLocationText())
-                                    .build())
-                            .collect(Collectors.toList()))
-                    .setTotalPages(totalPages)
-                    .setTotalElements(totalElements)
                     .build());
             observer.onCompleted();
         });
@@ -653,7 +594,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     public void resetPassword(ResetPasswordRequest request,
                               StreamObserver<ResetPasswordResponse> observer) {
         handle(observer, () -> {
-            if (request.getNewPassword().length() < 6) throw new DomainException("Password must be at least 6 characters", Status.INVALID_ARGUMENT);
+            if (request.getNewPassword().length() <8) throw new DomainException("Password must be at least 8 characters", Status.INVALID_ARGUMENT);
 
             doctorUseCase.resetPassword(request.getNewPassword());
             observer.onNext(ResetPasswordResponse.newBuilder()

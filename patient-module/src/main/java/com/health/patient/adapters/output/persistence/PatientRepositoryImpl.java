@@ -19,7 +19,7 @@ import static com.health.patient.mapper.Mapper.mapRow;
 public class PatientRepositoryImpl implements PatientRepositoryPort {
 
     private final CqlSession session;
-    private final Provider<AppointmentRepositoryPort> appointmentRepoProvider;
+    private final Provider<AppointmentRepositoryPort> appointmentRepoProvider; //Circular Dependency
     private final PreparedStatement insertPatient;
     private final PreparedStatement insertEmailLookup;
     private final PreparedStatement selectPatientById;
@@ -94,7 +94,7 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
                 false, now, now
         ));
 
-        // patients_by_email — O(1) login lookup
+        // patients_by_email — login lookup
         session.execute(insertEmailLookup.bind(
                 patient.getEmail(), patient.getId()
         ));

@@ -31,7 +31,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
     private final CqlSession session;
     private final RedisUtil redisUtil;
-    private final Provider<AppointmentRepositoryPort> appointmentRepoProvider;
+    private final Provider<AppointmentRepositoryPort> appointmentRepoProvider; //Circular Dependency
     private final ScheduleRepositoryPort scheduleRepo;
 
     // ── Prepared statements ────────────────────────

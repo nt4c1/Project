@@ -1,0 +1,8 @@
+{
+  "doctorId": "{{ faker.random.uuid }}",
+  "patientId": "{{ faker.random.uuid }}",
+  "clinicId": "{{ faker.random.uuid }}",
+  "date": "optical",
+  "time": "Pennsylvania data-warehouse",
+  "reasonForVisit": "Games & Grocery"
+}

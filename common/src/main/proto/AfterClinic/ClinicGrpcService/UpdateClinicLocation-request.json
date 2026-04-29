@@ -1,0 +1,4 @@
+{
+  "clinicId": "{{ faker.random.uuid }}",
+  "locationText": "Investment Account circuit Personal Loan Account"
+}

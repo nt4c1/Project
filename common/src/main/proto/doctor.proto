@@ -25,11 +25,6 @@ service DoctorGrpcService {
   rpc RemoveClinic             (RemoveClinicRequest)         returns (RemoveClinicResponse);
   rpc DeleteDoctor             (DeleteDoctorRequest)         returns (DeleteDoctorResponse);
 
-  // Clinic
-  rpc CreateClinic             (CreateClinicRequest)         returns (CreateClinicResponse);
-  rpc GetDoctorsByClinic       (GetByClinicRequest)          returns (GetByClinicResponse);
-  rpc SearchClinics            (SearchClinicRequest)         returns (SearchClinicResponse);
-
   // Schedule
   rpc CreateSchedule           (CreateScheduleRequest)       returns (CreateScheduleResponse);
   rpc UpdateSchedule           (UpdateScheduleRequest)       returns (UpdateScheduleResponse);
@@ -52,18 +47,18 @@ service DoctorGrpcService {
 // ── Doctor ─────────────────────────────────────────────────
 
 message CreateDoctorRequest {
-  string         name           = 1;
-  repeated string clinic_ids    = 2;
-  DoctorType     type           = 3;
+  string         name = 1;
+  repeated string clinic_ids = 2;
+  DoctorType     type = 3;
   string         specialization = 4;
-  string         email          = 5;
-  string         password       = 6;
-  string         phone          = 7;
+  string         email = 5;
+  string         password = 6;
+  string         phone = 7;
 }
-message CreateDoctorResponse { DoctorMessage doctor = 1; string message = 2; }
+message CreateDoctorResponse {DoctorMessage doctor = 1; string message = 2;}
 
-message GetDoctorRequest  { string doctor_id = 1; }
-message GetDoctorResponse { DoctorMessage doctor = 1; }
+message GetDoctorRequest  {string doctor_id = 1;}
+message GetDoctorResponse {DoctorMessage doctor = 1;}
 
 message DoctorActiveRequest {
   string doctor_id = 1;
@@ -72,11 +67,11 @@ message DoctorActiveRequest {
 
 message DoctorActiveResponse {
   bool   is_active = 1;
-  string message   = 2;
+  string message = 2;
 }
 
-message UpdateLocationRequest  { string doctor_id = 1; string clinic_id = 2; string location_text = 3; }
-message UpdateLocationResponse { bool success = 1; string message = 2; }
+message UpdateLocationRequest  {string doctor_id = 1; string clinic_id = 2; string location_text = 3;}
+message UpdateLocationResponse {bool success = 1; string message = 2;}
 
 message UpdateDoctorRequest {
   string email = 1;
@@ -120,109 +115,89 @@ message DeleteDoctorResponse{
   string message = 1;
 }
 
-// ── Clinic ─────────────────────────────────────────────────
-
-message CreateClinicRequest  { string name = 1; string location_text = 2; }
-message CreateClinicResponse { ClinicMessage clinic = 1; string message = 2; }
-
-message GetByClinicRequest  { string clinic_id = 1; }
-message GetByClinicResponse { repeated DoctorMessage doctors = 1; }
-
-message SearchClinicRequest {
-  string name = 1;
-  int32  page = 2;
-  int32  size = 3;
-}
-
-message SearchClinicResponse {
-  repeated ClinicMessage clinics = 1;
-  int32 total_pages = 2;
-  int64 total_elements = 3;
-}
-
 // ── Schedule ───────────────────────────────────────────────
 
 message CreateScheduleRequest {
-  string          doctor_id             = 1;
-  string          clinic_id             = 2;
-  repeated string working_days          = 3;
-  string          start_time            = 4;
-  string          end_time              = 5;
+  string          doctor_id = 1;
+  string          clinic_id = 2;
+  repeated string working_days = 3;
+  string          start_time = 4;
+  string          end_time = 5;
   int32           slot_duration_minutes = 6;
-  int32           max_appointments_day  = 7;
+  int32           max_appointments_day = 7;
 }
-message CreateScheduleResponse { string message = 1; }
+message CreateScheduleResponse {string message = 1;}
 
 message UpdateScheduleRequest {
-  string          doctor_id             = 1;
-  string          clinic_id             = 2;
-  repeated string working_days          = 3;
-  string          start_time            = 4;
-  string          end_time              = 5;
+  string          doctor_id = 1;
+  string          clinic_id = 2;
+  repeated string working_days = 3;
+  string          start_time = 4;
+  string          end_time = 5;
   int32           slot_duration_minutes = 6;
-  int32           max_appointments_day  = 7;
+  int32           max_appointments_day = 7;
 }
 
 message UpdateScheduleResponse {
   string message = 1;
 }
 
-message GetScheduleRequest  { string doctor_id = 1; string clinic_id = 2; }
+message GetScheduleRequest  {string doctor_id = 1; string clinic_id = 2;}
 message GetScheduleResponse {
-  string          doctor_id             = 1;
-  repeated string working_days          = 2;
-  string          start_time            = 3;
-  string          end_time              = 4;
+  string          doctor_id = 1;
+  repeated string working_days = 2;
+  string          start_time = 3;
+  string          end_time = 4;
   int32           slot_duration_minutes = 5;
-  int32           max_appointments_day  = 6;
+  int32           max_appointments_day = 6;
 }
 
 // ── Location ───────────────────────────────────────────────
 
-message NearbyDoctorsRequest  { string location_text  = 1; }
-message NearbyDoctorsResponse { repeated DoctorMessage doctors = 1;}
+message NearbyDoctorsRequest  {string location_text = 1;}
+message NearbyDoctorsResponse {repeated DoctorMessage doctors = 1;}
 
-message ByLocationRequest  { string geohash_prefix = 1; }
-message ByLocationResponse { repeated DoctorMessage doctors = 1; }
+message ByLocationRequest  {string geohash_prefix = 1;}
+message ByLocationResponse {repeated DoctorMessage doctors = 1;}
 
 // ── Appointments ───────────────────────────────────────────
 
 message CreateAppointmentRequest {
-  string doctor_id        = 1;
-  string patient_id       = 2;
-  string clinic_id        = 3;
-  string date             = 4;
-  string time             = 5;
+  string doctor_id = 1;
+  string patient_id = 2;
+  string clinic_id = 3;
+  string date = 4;
+  string time = 5;
   string reason_for_visit = 6;
 }
 message CreateAppointmentResponse {
-  bool              success     = 1;
+  bool              success = 1;
   AppointmentMessage appointment = 2;
-  string            message     = 3;
+  string            message = 3;
 }
 
 message CancelAppointmentRequest {
-  string appointment_id      = 1;
-  string patient_id          = 2;
-  string doctor_id           = 3;
-  string date                = 4;
-  string time                = 5;
+  string appointment_id = 1;
+  string patient_id = 2;
+  string doctor_id = 3;
+  string date = 4;
+  string time = 5;
   string cancellation_reason = 6;
 }
-message CancelAppointmentResponse { bool success = 1; string message = 2; }
+message CancelAppointmentResponse {bool success = 1; string message = 2;}
 
-message GetAppointmentsRequest  { string doctor_id = 1; string date = 2; }
-message GetAppointmentsResponse { repeated AppointmentMessage appointments = 1; }
+message GetAppointmentsRequest  {string doctor_id = 1; string date = 2;}
+message GetAppointmentsResponse {repeated AppointmentMessage appointments = 1;}
 
-message GetMyAppointmentsRequest  { string patient_id = 1; string date = 2; }
-message GetMyAppointmentsResponse { repeated AppointmentMessage appointments = 1; }
+message GetMyAppointmentsRequest  {string patient_id = 1; string date = 2;}
+message GetMyAppointmentsResponse {repeated AppointmentMessage appointments = 1;}
 
 message AppointmentActionRequest {
   string            appointment_id = 1;
-  string            doctor_id      = 2;
-  string            patient_id     = 3;
-  string            date           = 4;
-  string            time           = 5;
-  AppointmentStatus status         = 6;
+  string            doctor_id = 2;
+  string            patient_id = 3;
+  string            date = 4;
+  string            time = 5;
+  AppointmentStatus status = 6;
 }
-message AppointmentActionResponse { bool success = 1; string message = 2; }
+message AppointmentActionResponse {bool success = 1; string message = 2;}

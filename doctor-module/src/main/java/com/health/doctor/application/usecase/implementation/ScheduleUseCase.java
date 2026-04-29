@@ -7,7 +7,6 @@ import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
-import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.Min;
@@ -31,13 +30,12 @@ public class ScheduleUseCase implements ScheduleInterface {
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
 
     private final ScheduleRepositoryPort repo;
-    private final ClinicRepositoryPort clinicRepo;
     private final AppointmentRepositoryPort appointmentRepo;
 
-    public ScheduleUseCase(ScheduleRepositoryPort repo, ClinicRepositoryPort clinicRepo, AppointmentRepositoryPort appointmentRepo) {
+    public ScheduleUseCase(ScheduleRepositoryPort repo, AppointmentRepositoryPort appointmentRepo) {
 
         this.repo = repo;
-        this.clinicRepo = clinicRepo;
+
         this.appointmentRepo = appointmentRepo;
     }
 

@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+import "auth.proto";
+import "common.proto";
+
+option java_package = "com.health.grpc.clinic";
+option java_outer_classname = "ClinicProto";
+option java_multiple_files = true;
+
+
+service ClinicGrpcService {
+
+  //Auth
+  rpc GenerateClinicToken       (TokenRequest)          returns (TokenResponse);
+  rpc ForgotPassword           (ForgotPasswordRequest)        returns (ForgotPasswordResponse);
+  rpc ResetPassword            (ResetPasswordRequest)         returns (ResetPasswordResponse);
+
+  // Clinic
+  rpc CreateClinic             (CreateClinicRequest)         returns (CreateClinicResponse);
+  rpc UpdateClinic             (UpdateClinicRequest)         returns (UpdateClinicResponse);
+  rpc DeleteClinic             (DeleteClinicRequest)         returns (DeleteClinicResponse);
+  rpc UpdateClinicLocation     (UpdateClinicLocationRequest) returns (UpdateClinicLocationResponse);
+  rpc GetDoctorsByClinic       (GetByClinicRequest)          returns (GetByClinicResponse);
+  rpc SearchClinics            (SearchClinicRequest)         returns (SearchClinicResponse);
+
+}
+
+message CreateClinicRequest  {
+  string name = 1;
+  string location_text = 2;
+  string email = 3;
+  string password = 4;
+  string phone = 5;
+}
+message CreateClinicResponse {ClinicMessage clinic = 1; string message = 2;}
+
+message UpdateClinicRequest {
+  string clinic_id = 1;
+  string name = 2;
+}
+message UpdateClinicResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message DeleteClinicRequest {
+  string clinic_id = 1;
+}
+message DeleteClinicResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UpdateClinicLocationRequest {
+  string clinic_id = 1;
+  string location_text = 2;
+}
+message UpdateClinicLocationResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetByClinicRequest  {string clinic_id = 1;}
+message GetByClinicResponse {repeated DoctorMessage doctors = 1;}
+
+message SearchClinicRequest {
+  string name = 1;
+  int32  page = 2;
+  int32  size = 3;
+}
+
+message SearchClinicResponse {
+  repeated ClinicMessage clinics = 1;
+  int32 total_pages = 2;
+  int64 total_elements = 3;
+}

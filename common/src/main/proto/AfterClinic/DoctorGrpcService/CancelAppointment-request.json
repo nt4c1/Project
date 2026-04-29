@@ -1,0 +1,8 @@
+{
+  "appointmentId": "{{ faker.random.uuid }}",
+  "patientId": "{{ faker.random.uuid }}",
+  "doctorId": "{{ faker.random.uuid }}",
+  "date": "zero administration Fantastic Fresh Table Jersey",
+  "time": "transmitter Pine",
+  "cancellationReason": "Turnpike parse Islands"
+}

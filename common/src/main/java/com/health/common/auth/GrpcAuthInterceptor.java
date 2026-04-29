@@ -25,8 +25,12 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
     private static final Metadata.Key<String> AUTHORIZATION_HEADER_PATIENT =
             Metadata.Key.of("Authorization_Patient", Metadata.ASCII_STRING_MARSHALLER);
 
+    private static final Metadata.Key<String> AUTHORIZATION_HEADER_CLINIC =
+            Metadata.Key.of("Authorization_Clinic", Metadata.ASCII_STRING_MARSHALLER);
+
     private static final Set<String> LOGIN_METHODS = Set.of(
             "GenerateToken",
+            "GenerateClinicToken",
             "PatientLogin"
     );
 
@@ -54,15 +58,16 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
 
         String authHeaderDoctor = headers.get(AUTHORIZATION_HEADER_DOCTOR);
         String authHeaderPatient = headers.get(AUTHORIZATION_HEADER_PATIENT);
+        String authHeaderClinic = headers.get(AUTHORIZATION_HEADER_CLINIC);
 
         if (isLoginMethod(methodName)) {
-            return handleBasicAuth(call, headers, next, authHeaderDoctor, authHeaderPatient);
+            return handleBasicAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic);
         }
         if (isPublicMethod(methodName)) {
             return next.startCall(call, headers);
         }
 
-        return handleBearerAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, methodName);
+        return handleBearerAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic, methodName);
     }
 
     private <ReqT, RespT> ServerCall.Listener<ReqT> handleBasicAuth(
@@ -70,9 +75,11 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
             Metadata headers,
             ServerCallHandler<ReqT, RespT> next,
             String authHeaderDoctor,
-            String authHeaderPatient) {
+            String authHeaderPatient,
+            String authHeaderClinic) {
         
-        String authHeader = authHeaderDoctor != null ? authHeaderDoctor : authHeaderPatient;
+        String authHeader = authHeaderDoctor != null ? authHeaderDoctor :
+                           (authHeaderPatient != null ? authHeaderPatient : authHeaderClinic);
 
         if (authHeader == null || !authHeader.startsWith("Basic ")) {
             log.debug("Missing or invalid Basic Authorization header");
@@ -106,9 +113,11 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
             ServerCallHandler<ReqT, RespT> next,
             String authHeaderDoctor,
             String authHeaderPatient,
+            String authHeaderClinic,
             String methodName) {
 
-        String authHeader = authHeaderDoctor != null ? authHeaderDoctor : authHeaderPatient;
+        String authHeader = authHeaderDoctor != null ? authHeaderDoctor :
+                           (authHeaderPatient != null ? authHeaderPatient : authHeaderClinic);
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             log.debug("Missing Bearer token for method: {}", methodName);

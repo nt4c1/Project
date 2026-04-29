@@ -1,0 +1,7 @@
+{
+  "doctorId": "{{ faker.random.uuid }}",
+  "clinicIds": [
+    "overriding",
+    "Metal Buckinghamshire withdrawal"
+  ]
+}

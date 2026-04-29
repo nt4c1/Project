@@ -343,7 +343,7 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public void resetPassword(@NotBlank @Size(min = 6) String newPassword) {
+    public void resetPassword(@NotBlank String newPassword) {
         String userId = GrpcAuthInterceptor.USER_ID_KEY.get();
         String role = GrpcAuthInterceptor.ROLE_KEY.get();
         String type = GrpcAuthInterceptor.TOKEN_TYPE_KEY.get();
