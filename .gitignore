@@ -13,3 +13,4 @@ out/
 .settings
 .classpath
 .factorypath
+common/src/main/proto/AfterClinic
