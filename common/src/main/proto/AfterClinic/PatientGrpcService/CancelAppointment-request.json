@@ -1,8 +1,0 @@
-{
-  "appointmentId": "{{ faker.random.uuid }}",
-  "patientId": "{{ faker.random.uuid }}",
-  "doctorId": "{{ faker.random.uuid }}",
-  "date": "Saint Lucia alarm FTP",
-  "time": "card panel",
-  "cancellationReason": "copying access"
-}

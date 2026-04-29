@@ -1,8 +1,0 @@
-{
-  "appointmentId": "{{ faker.random.uuid }}",
-  "doctorId": "{{ faker.random.uuid }}",
-  "patientId": "{{ faker.random.uuid }}",
-  "date": "Dynamic Coordinator Planner",
-  "time": "Metal AI",
-  "status": "APPOINTMENT_STATUS_POSTPONED"
-}

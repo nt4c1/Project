@@ -1,7 +1,0 @@
-{
-  "doctorId": "{{ faker.random.uuid }}",
-  "clinicIds": [
-    "Customer",
-    "Generic Fresh Car vortals Savings Account"
-  ]
-}

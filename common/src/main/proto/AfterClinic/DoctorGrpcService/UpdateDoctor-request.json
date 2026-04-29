@@ -1,6 +1,0 @@
-{
-  "email": "{{ faker.internet.example_email }}",
-  "password": "{{ faker.internet.password }}",
-  "doctorId": "{{ faker.random.uuid }}",
-  "phone": "{{ faker.phone.phone_number }}"
-}

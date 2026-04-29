@@ -1,3 +1,0 @@
-{
-  "doctorId": "{{ faker.random.uuid }}"
-}

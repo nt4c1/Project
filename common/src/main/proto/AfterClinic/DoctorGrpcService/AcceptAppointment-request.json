@@ -1,8 +1,0 @@
-{
-  "appointmentId": "{{ faker.random.uuid }}",
-  "doctorId": "{{ faker.random.uuid }}",
-  "patientId": "{{ faker.random.uuid }}",
-  "date": "pricing structure",
-  "time": "Senegal Unbranded Metal Mouse",
-  "status": "APPOINTMENT_STATUS_COMPLETED"
-}

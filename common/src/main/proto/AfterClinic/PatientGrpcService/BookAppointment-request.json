@@ -1,8 +1,0 @@
-{
-  "doctorId": "{{ faker.random.uuid }}",
-  "patientId": "{{ faker.random.uuid }}",
-  "clinicId": "{{ faker.random.uuid }}",
-  "date": "Producer",
-  "time": "pixel West Virginia",
-  "reasonForVisit": "leverage"
-}

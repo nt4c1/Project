@@ -1,4 +1,0 @@
-{
-  "patientId": "{{ faker.random.uuid }}",
-  "date": "plum violet"
-}
