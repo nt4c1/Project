@@ -186,26 +186,13 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     // ── Doctor discovery (delegated to doctor module directly) ────────────────
 
     @Override
-    public void getNearbyDoctors(NearbyDoctorsProxyRequest request,
-                                 StreamObserver<NearbyDoctorsProxyResponse> observer) {
+    public void getDoctorsByLocation(com.health.grpc.common.LocationSearchRequest request,
+                                     StreamObserver<NearbyDoctorsProxyResponse> observer) {
         handle(observer, () -> {
-            if (request.getLocationText().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
+            if (request.getLocation().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
             ensurePatient();
             return NearbyDoctorsProxyResponse.newBuilder()
-                    .addAllDoctors(doctorModule.getNearbyDoctors(request.getLocationText())
-                            .stream().map(MapperClass::toMsg).collect(Collectors.toList()))
-                    .build();
-        });
-    }
-
-    @Override
-    public void getDoctorsByLocation(ByLocationProxyRequest request,
-                                     StreamObserver<ByLocationProxyResponse> observer) {
-        handle(observer, () -> {
-            if (request.getGeohashPrefix().isBlank()) throw new DomainException("Geohash prefix is required", Status.INVALID_ARGUMENT);
-            ensurePatient();
-            return ByLocationProxyResponse.newBuilder()
-                    .addAllDoctors(doctorModule.getDoctorsByGeohash(request.getGeohashPrefix())
+                    .addAllDoctors(doctorModule.getDoctorsByLocation(request.getLocation())
                             .stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build();
         });

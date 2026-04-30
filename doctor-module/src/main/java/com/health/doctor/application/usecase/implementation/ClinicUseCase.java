@@ -14,11 +14,14 @@ import com.health.doctor.domain.model.Location;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
 import com.health.grpc.auth.TokenResponse;
 import jakarta.inject.Singleton;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -39,16 +42,20 @@ public class ClinicUseCase implements ClinicInterface {
         if (name == null || locationText == null)
             throw new RuntimeException("Name or location is required");
 
-        Clinic existing = repo.findByLocationText(locationText);
-        if (existing != null && locationText.equals(existing.getLocationText()))
-            throw new RuntimeException("Clinic already exists");
+        List<Clinic> existing = repo.findByLocationText(locationText);
+        if (existing != null && !existing.isEmpty()) {
+             for (Clinic c : existing) {
+                 if (name.equalsIgnoreCase(c.getName())) {
+                     throw new RuntimeException("Clinic already exists at this location with this name");
+                 }
+             }
+        }
 
         if (email != null && repo.findCredentialsByEmail(email).isPresent()) {
             throw new AlreadyExistsException("Clinic already exists with email: " + email);
         }
         ValidationUtil.validateEmail(email);
         ValidationUtil.validatePassword(password);
-        ValidationUtil.validatePhone(phone);
 
         Location location = locationService.resolve(locationText);
         UUID clinicId = UUID.randomUUID();
@@ -85,42 +92,33 @@ public class ClinicUseCase implements ClinicInterface {
     }
 
     @Override
-    public List<Clinic> getClinicsByLocationText(String locationText) {
-        Clinic clinic = repo.findByLocationText(locationText);
-        return clinic != null ? List.of(clinic) : List.of();
+    public List<Clinic> getClinicsByLocation(@NotBlank String location) {
+        List<Clinic> found;
+
+        if (isGeohash(location)) {
+            // Direct geohash search
+            found = repo.findByLocationGeohash(location);
+        } else {
+            // Text resolution
+            Location resolved = locationService.resolve(location);
+
+            // Check DB for exact match of resolved canonical name
+            found = repo.findByLocationText(resolved.getLocationText());
+
+            // If not found, fallback to geohash zoom-out logic
+            if (found == null || found.isEmpty()) {
+                String geohash = resolved.getGeohash().substring(0, Math.min(resolved.getGeohash().length(), 6));
+                log.info("Searching clinics near geohash={} lat={} lon={}",
+                        geohash, resolved.getLatitude(), resolved.getLongitude());
+                found = repo.findNearby(geohash, resolved.getLatitude(), resolved.getLongitude());
+            }
+        }
+
+        return found;
     }
 
-    @Override
-    public List<Clinic> getClinicsByLocationGeohash(String geohashPrefix) {
-        Clinic clinic = repo.findByLocationGeohash(geohashPrefix);
-        return clinic != null ? List.of(clinic) : List.of();
-    }
-
-
-    @Override
-    public Clinic getClinicById(UUID clinicId) {
-        return repo.findById(clinicId)
-                .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
-    }
-
-    @Override
-    public List<Clinic> findByName(String name) {
-        return List.of(repo.findByName(name));
-
-    }
-
-    @Override
-    public List<Clinic> getNearbyClinicsByLocationText(String locationText) {
-        if (locationText == null || locationText.isBlank())
-            throw new InvalidArgumentException("Location text is required");
-
-        Location location = locationService.resolve(locationText);
-        String geohash = location.getGeohash().substring(0, 5);
-
-        log.info("Searching clinics near geohash={} lat={} lon={}",
-                geohash, location.getLatitude(), location.getLongitude());
-
-        return repo.findNearby(geohash, location.getLatitude(), location.getLongitude());
+    private boolean isGeohash(String input) {
+        return input != null && input.matches("^[a-z0-9]{4,12}$") && !input.contains(" ");
     }
 
     @Override
@@ -193,4 +191,14 @@ public class ClinicUseCase implements ClinicInterface {
         repo.updateLocation(clinicId, location);
     }
 
+    @Override
+    public Clinic getClinicById(UUID clinicId) {
+        return repo.findById(clinicId)
+                .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+    }
+
+    @Override
+    public List<Clinic> findByName(String name) {
+        return List.of(repo.findByName(name));
+    }
 }

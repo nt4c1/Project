@@ -14,9 +14,9 @@ public interface ClinicRepositoryPort {
 
     Clinic findByName(String name);
 
-    Clinic findByLocationText(String locationText);
+    List<Clinic> findByLocationText(String locationText);
 
-    Clinic findByLocationGeohash(String geohash);
+    List<Clinic> findByLocationGeohash(String geohash);
 
     Location getLocation(UUID clinicId);
 

@@ -5,6 +5,8 @@ import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.health.common.redis.RedisUtil;
 import com.health.doctor.domain.model.Clinic;
 import com.health.doctor.domain.model.Location;
 import com.health.doctor.domain.ports.ClinicRepositoryPort;
@@ -20,6 +22,16 @@ import com.health.doctor.mapper.MapperClass;
 public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     private final CqlSession session;
+    private final RedisUtil redisUtil;
+
+    private static final String CACHE_PREFIX       = "clinic:";
+    private static final String CACHE_PREFIX_LT    = "clinic:lt:";
+    private static final String CACHE_PREFIX_GH    = "clinic:gh:";
+    private static final long   TTL                = 3600; // 1h
+
+    // TypeReferences for generic list deserialization (fixes Clinic[].class anti-pattern)
+    private static final TypeReference<List<Clinic>> CLINIC_LIST_TYPE = new TypeReference<>() {};
+
     private final PreparedStatement insertClinic;
     private final PreparedStatement insertClinicByGeohash;
     private final PreparedStatement insertClinicByLocationText;
@@ -42,8 +54,10 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
     private final PreparedStatement deleteClinicByGeohash;
     private final PreparedStatement deleteClinicByLocationText;
 
-    public ClinicRepositoryImpl(CqlSession session) {
-        this.session = session;
+    public ClinicRepositoryImpl(CqlSession session, RedisUtil redisUtil) {
+        this.session   = session;
+        this.redisUtil = redisUtil;
+
         this.insertClinic = session.prepare(
                 "INSERT INTO doctor_service.clinics " +
                         "(clinic_id, name, latitude, longitude, geohash, location_text, " +
@@ -68,11 +82,11 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
         );
         this.selectIdByLocationText = session.prepare(
                 "SELECT clinic_id FROM doctor_service.clinics_by_location_text " +
-                        "WHERE location_text=? LIMIT 1"
+                        "WHERE location_text=?"
         );
         this.selectIdByGeohash = session.prepare(
                 "SELECT clinic_id FROM doctor_service.clinics_by_geohash " +
-                        "WHERE geohash=? LIMIT 1"
+                        "WHERE geohash=?"
         );
         this.selectByGeohash = session.prepare(
                 "SELECT clinic_id, name, latitude, longitude, is_active " +
@@ -122,6 +136,10 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
         );
     }
 
+    // -------------------------------------------------------------------------
+    // Credentials
+    // -------------------------------------------------------------------------
+
     @Override
     public void saveCredentials(com.health.doctor.domain.model.ClinicCredentials creds) {
         Instant now = Instant.now();
@@ -154,43 +172,131 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
 
     @Override
     public void updatePassword(UUID clinicId, String passwordHash) {
-        session.execute(updateClinicCredentials.bind
-                (passwordHash, Instant.now(), clinicId));
+        session.execute(updateClinicCredentials.bind(passwordHash, Instant.now(), clinicId));
     }
+
+    // -------------------------------------------------------------------------
+    // Write
+    // -------------------------------------------------------------------------
 
     @Override
     public void save(Clinic c) {
         Location l   = c.getLocation();
         Instant  now = Instant.now();
-        String   prefix = l.getGeohash() != null && l.getGeohash().length() >= 6
-                ? l.getGeohash().substring(0, 6)
-                : l.getGeohash();
+        String   prefix = geohashPrefix(l.getGeohash());
 
-        // clinics — canonical row
         session.execute(insertClinic.bind(
                 c.getId(), c.getName(),
                 l.getLatitude(), l.getLongitude(),
                 l.getGeohash(), l.getLocationText(),
                 c.isActive(), false, now, now
         ));
-
-        // clinics_by_geohash
         session.execute(insertClinicByGeohash.bind(
                 prefix, c.getId(), c.getName(),
                 l.getLatitude(), l.getLongitude(), c.isActive(), false
         ));
-
-        // clinics_by_location_text
         session.execute(insertClinicByLocationText.bind(
                 l.getLocationText(), c.getId(), c.getName(), c.isActive(), false
         ));
+
+        // Invalidate any stale location-index caches that cover this clinic
+        redisUtil.deleteAsync(CACHE_PREFIX_LT + l.getLocationText());
+        redisUtil.deleteAsync(CACHE_PREFIX_GH + prefix);
     }
 
     @Override
+    public void update(Clinic c) {
+        Instant  now    = Instant.now();
+        Location l      = c.getLocation();
+        String   prefix = geohashPrefix(l.getGeohash());
+
+        session.execute(updateClinic.bind(c.getName(), now, c.getId()));
+        session.execute(insertClinicByGeohash.bind(
+                prefix, c.getId(), c.getName(),
+                l.getLatitude(), l.getLongitude(), c.isActive(), c.isDeleted()
+        ));
+        session.execute(insertClinicByLocationText.bind(
+                l.getLocationText(), c.getId(), c.getName(), c.isActive(), c.isDeleted()
+        ));
+
+        // Update the clinic's own cache entry and bust location-index caches
+        redisUtil.setAsync(CACHE_PREFIX + c.getId(), c, TTL);
+        redisUtil.deleteAsync(CACHE_PREFIX_LT + l.getLocationText());
+        redisUtil.deleteAsync(CACHE_PREFIX_GH + prefix);
+    }
+
+    @Override
+    public void delete(UUID clinicId) {
+        Optional<Clinic> opt = findById(clinicId);
+        if (opt.isEmpty()) return;
+        Clinic  c      = opt.get();
+        Instant now    = Instant.now();
+        String  prefix = geohashPrefix(c.getLocation().getGeohash());
+
+        session.execute(softDeleteClinic.bind(now, clinicId));
+        session.execute(softDeleteClinicByGeohash.bind(prefix, clinicId));
+        session.execute(softDeleteClinicByLocationText.bind(c.getLocation().getLocationText(), clinicId));
+
+        redisUtil.deleteAsync(CACHE_PREFIX + clinicId);
+        redisUtil.deleteAsync(CACHE_PREFIX_LT + c.getLocation().getLocationText());
+        redisUtil.deleteAsync(CACHE_PREFIX_GH + prefix);
+    }
+
+    @Override
+    public void updateLocation(UUID clinicId, Location newLoc) {
+        Optional<Clinic> opt = findById(clinicId);
+        if (opt.isEmpty()) return;
+        Clinic  old       = opt.get();
+        Instant now       = Instant.now();
+        Location oldLoc   = old.getLocation();
+        String  oldPrefix = geohashPrefix(oldLoc.getGeohash());
+        String  newPrefix = geohashPrefix(newLoc.getGeohash());
+
+        // Remove old denormalized entries
+        session.execute(deleteClinicByGeohash.bind(oldPrefix, clinicId));
+        session.execute(deleteClinicByLocationText.bind(oldLoc.getLocationText(), clinicId));
+
+        // Update main table
+        session.execute(session.prepare(
+                "UPDATE doctor_service.clinics SET latitude=?, longitude=?, geohash=?, location_text=?, updated_at=? WHERE clinic_id=?"
+        ).bind(newLoc.getLatitude(), newLoc.getLongitude(), newLoc.getGeohash(), newLoc.getLocationText(), now, clinicId));
+
+        // Insert new denormalized entries
+        session.execute(insertClinicByGeohash.bind(
+                newPrefix, clinicId, old.getName(),
+                newLoc.getLatitude(), newLoc.getLongitude(), old.isActive(), old.isDeleted()
+        ));
+        session.execute(insertClinicByLocationText.bind(
+                newLoc.getLocationText(), clinicId, old.getName(), old.isActive(), old.isDeleted()
+        ));
+
+        old.setLocation(newLoc);
+        old.setUpdatedAt(now);
+
+        // Bust all affected cache entries
+        redisUtil.setAsync(CACHE_PREFIX + clinicId, old, TTL);
+        redisUtil.deleteAsync(CACHE_PREFIX_LT + oldLoc.getLocationText());
+        redisUtil.deleteAsync(CACHE_PREFIX_LT + newLoc.getLocationText());
+        redisUtil.deleteAsync(CACHE_PREFIX_GH + oldPrefix);
+        redisUtil.deleteAsync(CACHE_PREFIX_GH + newPrefix);
+    }
+
+    // -------------------------------------------------------------------------
+    // Reads
+    // -------------------------------------------------------------------------
+
+    @Override
     public Optional<Clinic> findById(UUID clinicId) {
+        String cacheKey = CACHE_PREFIX + clinicId;
+        Clinic cached = redisUtil.get(cacheKey, Clinic.class);
+        if (cached != null) return Optional.of(cached);
+
         Row r = session.execute(selectClinicById.bind(clinicId)).one();
         if (r == null) return Optional.empty();
-        return Optional.of(MapperClass.mapRowToClinic(r));
+
+        Clinic clinic = MapperClass.mapRowToClinic(r);
+        redisUtil.setAsync(cacheKey, clinic, TTL);
+        return Optional.of(clinic);
     }
 
     @Override
@@ -201,39 +307,60 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
     }
 
     @Override
-    public Clinic findByLocationText(String locationText) {
-        // Use lookup table
-        Row lookup = session.execute(selectIdByLocationText.bind(locationText)).one();
-        if (lookup == null) return null;
-        return findById(lookup.getUuid("clinic_id")).orElse(null);
+    public List<Clinic> findByLocationText(String locationText) {
+        String cacheKey = CACHE_PREFIX_LT + locationText;
+
+        // Fix: use TypeReference<List<Clinic>> instead of Clinic[].class
+        List<Clinic> cached = redisUtil.get(cacheKey, CLINIC_LIST_TYPE);
+        if (cached != null) return cached;
+
+        ResultSet rs = session.execute(selectIdByLocationText.bind(locationText));
+        List<Clinic> list = new ArrayList<>();
+        for (Row row : rs) {
+            findById(row.getUuid("clinic_id")).ifPresent(list::add);
+        }
+
+        redisUtil.setAsync(cacheKey, list, TTL);
+        return list;
     }
 
     @Override
-    public Clinic findByLocationGeohash(String geohash) {
-        String prefix = geohash.length() >= 6 ? geohash.substring(0, 6) : geohash;
-        // Use lookup table
-        Row lookup = session.execute(selectIdByGeohash.bind(prefix)).one();
-        if (lookup == null) return null;
-        return findById(lookup.getUuid("clinic_id")).orElse(null);
+    public List<Clinic> findByLocationGeohash(String geohash) {
+        String prefix   = geohashPrefix(geohash);
+        String cacheKey = CACHE_PREFIX_GH + prefix;
+
+        // Fix: use TypeReference<List<Clinic>> instead of Clinic[].class
+        List<Clinic> cached = redisUtil.get(cacheKey, CLINIC_LIST_TYPE);
+        if (cached != null) return cached;
+
+        ResultSet rs = session.execute(selectIdByGeohash.bind(prefix));
+        List<Clinic> list = new ArrayList<>();
+        for (Row row : rs) {
+            findById(row.getUuid("clinic_id")).ifPresent(list::add);
+        }
+
+        redisUtil.setAsync(cacheKey, list, TTL);
+        return list;
     }
 
     @Override
     public Location getLocation(UUID clinicId) {
-        Row r = session.execute(selectClinicById.bind(clinicId)).one();
-        if (r == null) return null;
-        return MapperClass.mapRowToLocation(r);
+        // Fix: reuse findById which is already cached — no separate Cassandra call needed
+        return findById(clinicId)
+                .map(Clinic::getLocation)
+                .orElse(null);
     }
 
     @Override
     public Clinic findDoctorAndClinic(UUID doctorId) {
         Row r = session.execute(selectClinicFromDoctorsByClinic.bind(doctorId)).one();
         if (r == null) return null;
-        return r.getUuid("clinic_id") != null ? findById(r.getUuid("clinic_id")).orElse(null) : null;
+        UUID clinicId = r.getUuid("clinic_id");
+        return clinicId != null ? findById(clinicId).orElse(null) : null;
     }
 
     @Override
     public List<Clinic> findNearby(String geohash, double lat, double lon) {
-        // Zoom out strategy for clinics
         for (int precision = 6; precision >= 4; precision--) {
             String prefix = geohash.substring(0, Math.min(geohash.length(), precision));
             List<Clinic> found = searchClinicsInPrefix(prefix, lat, lon);
@@ -242,38 +369,9 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
         return Collections.emptyList();
     }
 
-    private List<Clinic> searchClinicsInPrefix(String prefix, double lat, double lon) {
-        GeoHash center    = GeoHash.fromGeohashString(prefix);
-        GeoHash[] neighbors = center.getAdjacent();
-
-        Set<String> prefixes = new HashSet<>();
-        prefixes.add(prefix);
-        for (GeoHash n : neighbors) prefixes.add(n.toBase32().substring(0, prefix.length()));
-
-        record ClinicWithDistance(Clinic clinic, double distanceKm) {}
-        List<ClinicWithDistance> candidates = new ArrayList<>();
-
-        for (String p : prefixes) {
-            ResultSet rs = session.execute(selectByGeohash.bind(p));
-            for (Row r : rs) {
-                double cLat = r.getDouble("latitude");
-                double cLon = r.getDouble("longitude");
-                double dist = haversineKm(lat, lon, cLat, cLon);
-                Clinic clinic = findById(r.getUuid("clinic_id")).orElse(null);
-                if (clinic != null && clinic.isActive()) {
-                    candidates.add(new ClinicWithDistance(clinic, dist));
-                }
-            }
-        }
-
-        candidates.sort(Comparator.comparingDouble(ClinicWithDistance::distanceKm));
-        return candidates.stream().map(ClinicWithDistance::clinic).collect(Collectors.toList());
-    }
-
     @Override
     public List<Clinic> searchByName(String name, int page, int size) {
         ResultSet rs = session.execute(selectAllClinics.bind());
-        
         return rs.all().stream()
                 .map(MapperClass::mapRowToClinic)
                 .filter(c -> c.getName().toLowerCase().contains(name.toLowerCase()))
@@ -291,81 +389,41 @@ public class ClinicRepositoryImpl implements ClinicRepositoryPort {
                 .count();
     }
 
-    @Override
-    public void update(Clinic c) {
-        Instant now = Instant.now();
-        session.execute(updateClinic.bind(c.getName(), now, c.getId()));
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
 
-        Location l = c.getLocation();
-        String prefix = l.getGeohash() != null && l.getGeohash().length() >= 6
-                ? l.getGeohash().substring(0, 6)
-                : l.getGeohash();
+    private List<Clinic> searchClinicsInPrefix(String prefix, double lat, double lon) {
+        GeoHash   center    = GeoHash.fromGeohashString(prefix);
+        GeoHash[] neighbors = center.getAdjacent();
 
-        // Upsert denormalized tables
-        session.execute(insertClinicByGeohash.bind(
-                prefix, c.getId(), c.getName(),
-                l.getLatitude(), l.getLongitude(), c.isActive(), c.isDeleted()
-        ));
+        Set<String> prefixes = new HashSet<>();
+        prefixes.add(prefix);
+        for (GeoHash n : neighbors) prefixes.add(n.toBase32().substring(0, prefix.length()));
 
-        session.execute(insertClinicByLocationText.bind(
-                l.getLocationText(), c.getId(), c.getName(), c.isActive(), c.isDeleted()
-        ));
+        record ClinicWithDistance(Clinic clinic, double distanceKm) {}
+        List<ClinicWithDistance> candidates = new ArrayList<>();
+
+        for (String p : prefixes) {
+            ResultSet rs = session.execute(selectByGeohash.bind(p));
+            for (Row r : rs) {
+                double cLat  = r.getDouble("latitude");
+                double cLon  = r.getDouble("longitude");
+                double dist  = haversineKm(lat, lon, cLat, cLon);
+                Clinic clinic = findById(r.getUuid("clinic_id")).orElse(null);
+                if (clinic != null && clinic.isActive()) {
+                    candidates.add(new ClinicWithDistance(clinic, dist));
+                }
+            }
+        }
+
+        candidates.sort(Comparator.comparingDouble(ClinicWithDistance::distanceKm));
+        return candidates.stream().map(ClinicWithDistance::clinic).collect(Collectors.toList());
     }
 
-    @Override
-    public void delete(UUID clinicId) {
-        Optional<Clinic> opt = findById(clinicId);
-        if (opt.isEmpty()) return;
-        Clinic c = opt.get();
-        Instant now = Instant.now();
-
-        session.execute(softDeleteClinic.bind(now, clinicId));
-
-        Location l = c.getLocation();
-        String prefix = l.getGeohash() != null && l.getGeohash().length() >= 6
-                ? l.getGeohash().substring(0, 6)
-                : l.getGeohash();
-
-        session.execute(softDeleteClinicByGeohash.bind(prefix, clinicId));
-        session.execute(softDeleteClinicByLocationText.bind(l.getLocationText(), clinicId));
-    }
-
-    @Override
-    public void updateLocation(UUID clinicId, Location newLoc) {
-        Optional<Clinic> opt = findById(clinicId);
-        if (opt.isEmpty()) return;
-        Clinic old = opt.get();
-        Instant now = Instant.now();
-
-        Location oldLoc = old.getLocation();
-        String oldPrefix = oldLoc.getGeohash() != null && oldLoc.getGeohash().length() >= 6
-                ? oldLoc.getGeohash().substring(0, 6)
-                : oldLoc.getGeohash();
-
-        // 1. Delete old denormalized entries
-        session.execute(deleteClinicByGeohash.bind(oldPrefix, clinicId));
-        session.execute(deleteClinicByLocationText.bind(oldLoc.getLocationText(), clinicId));
-
-        // 2. Update main table and insert new denormalized entries
-        old.setLocation(newLoc);
-        old.setUpdatedAt(now);
-        
-        // Manual update for main table since save() uses IF NOT EXISTS
-        session.execute(session.prepare("UPDATE doctor_service.clinics SET latitude=?, longitude=?, geohash=?, location_text=?, updated_at=? WHERE clinic_id=?")
-                .bind(newLoc.getLatitude(), newLoc.getLongitude(), newLoc.getGeohash(), newLoc.getLocationText(), now, clinicId));
-
-        String newPrefix = newLoc.getGeohash() != null && newLoc.getGeohash().length() >= 6
-                ? newLoc.getGeohash().substring(0, 6)
-                : newLoc.getGeohash();
-
-        session.execute(insertClinicByGeohash.bind(
-                newPrefix, clinicId, old.getName(),
-                newLoc.getLatitude(), newLoc.getLongitude(), old.isActive(), old.isDeleted()
-        ));
-
-        session.execute(insertClinicByLocationText.bind(
-                newLoc.getLocationText(), clinicId, old.getName(), old.isActive(), old.isDeleted()
-        ));
+    /** Returns a 6-char geohash prefix, or the full hash if shorter than 6. */
+    private static String geohashPrefix(String geohash) {
+        return (geohash != null && geohash.length() >= 6) ? geohash.substring(0, 6) : geohash;
     }
 
     private double haversineKm(double lat1, double lon1, double lat2, double lon2) {

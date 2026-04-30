@@ -19,15 +19,11 @@ public interface ClinicInterface {
 
     void updateClinicLocation(@NotNull UUID clinicId, @NotBlank String locationText);
 
-    List<Clinic> getClinicsByLocationText(String locationText);
-
-    List<Clinic> getClinicsByLocationGeohash(String geohashPrefix);
+    List<Clinic> getClinicsByLocation(@NotBlank String location);
 
     Clinic getClinicById(UUID clinicId);
 
     List<Clinic> findByName(String name);
-
-    List<Clinic> getNearbyClinicsByLocationText(String locationText);
 
     List<Clinic> searchClinics(String name, int page, int size);
 

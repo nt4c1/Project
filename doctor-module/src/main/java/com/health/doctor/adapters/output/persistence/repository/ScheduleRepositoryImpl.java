@@ -6,18 +6,23 @@ import com.health.common.redis.RedisUtil;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import jakarta.inject.Singleton;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.health.doctor.mapper.MapperClass.log;
-
+@Slf4j
 @Singleton
 public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
 
     private final CqlSession session;
+    private final RedisUtil  redisUtil;
+
+    private static final String CACHE_PREFIX = "schedule:";
+    private static final long   TTL          = 3600L; // 1h
+
     private final PreparedStatement insertSchedule;
     private final PreparedStatement insertScheduleByClinic;
     private final PreparedStatement updateSchedule;
@@ -28,11 +33,11 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
     private final PreparedStatement deleteByClinicSchedule;
     private final PreparedStatement deleteByDoctorOverrides;
     private final PreparedStatement deleteByDoctorUnavailability;
-    private final RedisUtil redisUtil;
-    private final String CACHE_SCHEDULE_PREFIX = "schedule:";
 
     public ScheduleRepositoryImpl(CqlSession session, RedisUtil redisUtil) {
-        this.session = session;
+        this.session   = session;
+        this.redisUtil = redisUtil;
+
         this.insertSchedule = session.prepare(
                 "INSERT INTO doctor_service.doctor_schedules " +
                         "(doctor_id, clinic_id, working_days, start_time, end_time, " +
@@ -62,30 +67,23 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
                 "SELECT * FROM doctor_service.doctor_schedules WHERE doctor_id IN ?"
         );
         this.deleteByDoctor = session.prepare(
-                "DELETE FROM doctor_service.doctor_schedules WHERE doctor_id = ?"
+                "DELETE FROM doctor_service.doctor_schedules WHERE doctor_id=?"
         );
         this.deleteByClinicSchedule = session.prepare(
-                "DELETE FROM doctor_service.schedules_by_clinic WHERE clinic_id = ? AND doctor_id = ?"
+                "DELETE FROM doctor_service.schedules_by_clinic WHERE clinic_id=? AND doctor_id=?"
         );
         this.deleteByDoctorOverrides = session.prepare(
-                "DELETE FROM doctor_service.doctor_schedule_overrides WHERE doctor_id = ?"
+                "DELETE FROM doctor_service.doctor_schedule_overrides WHERE doctor_id=?"
         );
         this.deleteByDoctorUnavailability = session.prepare(
-                "DELETE FROM doctor_service.doctor_unavailability WHERE doctor_id = ?"
+                "DELETE FROM doctor_service.doctor_unavailability WHERE doctor_id=?"
         );
-        this.redisUtil = redisUtil;
     }
 
     @Override
     public void save(DoctorSchedule schedule) {
-        String cacheKey = CACHE_SCHEDULE_PREFIX + schedule.getDoctorId();
-        redisUtil.deleteAsync(cacheKey);
-
-        Set<String> days = schedule.getWorkingDays().stream()
-                .map(DayOfWeek::name)
-                .collect(Collectors.toSet());
-
-        Instant now = Instant.now();
+        Set<String> days = toDayNames(schedule.getWorkingDays());
+        Instant     now  = Instant.now();
 
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
                 .addStatement(insertSchedule.bind(
@@ -112,20 +110,14 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
         }
 
         session.execute(batch.build());
-        redisUtil.setAsync(cacheKey, schedule, 3600);
 
+        redisUtil.setAsync(cacheKey(schedule.getDoctorId(), schedule.getClinicId()), schedule, TTL);
     }
 
     @Override
     public void update(DoctorSchedule schedule) {
-        String cacheKey = CACHE_SCHEDULE_PREFIX + schedule.getDoctorId();
-        redisUtil.deleteAsync(cacheKey);
-
-        Set<String> days = schedule.getWorkingDays().stream()
-                .map(DayOfWeek::name)
-                .collect(Collectors.toSet());
-
-        Instant now = Instant.now();
+        Set<String> days = toDayNames(schedule.getWorkingDays());
+        Instant     now  = Instant.now();
 
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
                 .addStatement(updateSchedule.bind(
@@ -152,40 +144,34 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
         }
 
         session.execute(batch.build());
-        redisUtil.setAsync(cacheKey, schedule, 3600);
+        redisUtil.setAsync(cacheKey(schedule.getDoctorId(), schedule.getClinicId()), schedule, TTL);
     }
 
     @Override
     public Optional<DoctorSchedule> findByDoctorAndClinic(UUID doctorId, UUID clinicId) {
-
-        String cacheKey = CACHE_SCHEDULE_PREFIX + doctorId;
+        String cacheKey = cacheKey(doctorId, clinicId);
         try {
             DoctorSchedule cached = redisUtil.get(cacheKey, DoctorSchedule.class);
             if (cached != null) {
-                log.info("Redis hit for findByDoctorAndClinic: {}", doctorId);
+                log.debug("Redis hit for schedule doctorId={} clinicId={}", doctorId, clinicId);
                 return Optional.of(cached);
             }
         } catch (Exception e) {
-            log.warn("Redis GET failed for findByDoctorAndClinic: {}", e.getMessage());
+            log.warn("Redis GET failed for schedule doctorId={}: {}", doctorId, e.getMessage());
         }
 
         Row r = session.execute(selectByDoctorAndClinic.bind(doctorId, clinicId)).one();
-        if (r == null) {
-            return Optional.empty();
-        }
+        if (r == null) return Optional.empty();
 
         DoctorSchedule schedule = mapRowToSchedule(r);
-        redisUtil.setAsync(cacheKey, schedule, 3600);
-
+        redisUtil.setAsync(cacheKey, schedule, TTL);
         return Optional.of(schedule);
     }
 
     @Override
     public List<DoctorSchedule> findByDoctors(List<UUID> doctorIds) {
         if (doctorIds == null || doctorIds.isEmpty()) return Collections.emptyList();
-
-        ResultSet rs = session.execute(selectByDoctors.bind(doctorIds));
-
+        ResultSet       rs   = session.execute(selectByDoctors.bind(doctorIds));
         List<DoctorSchedule> list = new ArrayList<>();
         for (Row r : rs) {
             list.add(mapRowToSchedule(r));
@@ -195,12 +181,9 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
 
     @Override
     public void hardDeleteByDoctor(UUID doctorId) {
-        String cacheKey = CACHE_SCHEDULE_PREFIX + doctorId;
-        redisUtil.deleteAsync(cacheKey);
-
-        // Find all schedules for this doctor (they might have multiple clinics)
+        // Fetch all schedules first so we know which clinic cache keys to bust
         ResultSet rs = session.execute(selectByDoctors.bind(List.of(doctorId)));
-        
+
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED);
         batch.addStatement(deleteByDoctor.bind(doctorId));
         batch.addStatement(deleteByDoctorOverrides.bind(doctorId));
@@ -211,9 +194,21 @@ public class ScheduleRepositoryImpl implements ScheduleRepositoryPort {
             if (clinicId != null) {
                 batch.addStatement(deleteByClinicSchedule.bind(clinicId, doctorId));
             }
+            // Fix: bust the correct per-clinic cache key for every schedule found
+            redisUtil.deleteAsync(cacheKey(doctorId, clinicId));
         }
 
         session.execute(batch.build());
+    }
+
+    private static String cacheKey(UUID doctorId, UUID clinicId) {
+        return CACHE_PREFIX + doctorId + ":" + clinicId;
+    }
+
+    private static Set<String> toDayNames(Set<DayOfWeek> days) {
+        return days.stream()
+                .map(DayOfWeek::name)
+                .collect(Collectors.toSet());
     }
 
     private DoctorSchedule mapRowToSchedule(Row r) {

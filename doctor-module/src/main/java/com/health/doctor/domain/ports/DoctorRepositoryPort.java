@@ -15,7 +15,7 @@ public interface DoctorRepositoryPort {
 
     Optional<Doctor> findById(UUID doctorId);
 
-    List<Doctor> findByGeohashPrefix(String prefix);
+    List<Doctor> findByLocationText(String locationText);
 
     List<Doctor> findNearby(String geohash, double lat, double lon);
 
@@ -25,13 +25,9 @@ public interface DoctorRepositoryPort {
 
     void deleteDoctor(UUID doctorId, String email, String password);
 
-    List<UUID> findClinicIds(UUID doctorId);
-
     void addClinicId(UUID doctorId, UUID clinicId);
 
     void removeClinicId(UUID doctorId, UUID clinicId);
-
-    Optional<Doctor> findActive(UUID doctorId);
 
     boolean isDeleted(UUID doctorId);
 

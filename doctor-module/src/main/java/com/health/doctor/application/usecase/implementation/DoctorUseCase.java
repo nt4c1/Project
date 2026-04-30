@@ -4,6 +4,7 @@ import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
 import com.health.common.exception.AlreadyExistsException;
 import com.health.common.exception.NotFoundException;
+import com.health.common.redis.RedisUtil;
 import com.health.common.utils.DateTimeUtils;
 import com.health.common.utils.ValidationUtil;
 import com.health.common.exception.InvalidArgumentException;
@@ -21,7 +22,6 @@ import jakarta.inject.Singleton;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
 import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
 import io.micronaut.validation.Validated;
@@ -43,6 +43,10 @@ public class DoctorUseCase implements DoctorInterface {
     private final JwtProvider jwtProvider;
     private final LocationService locationService;
     private final DoctorNatsClient natsClient;
+    private final RedisUtil redisUtil;
+    private static final String CACHE_LOCATION_PREFIX = "doctor-location:";
+    private static final long TTL_LOCATION = 600; // 10m
+
 
     public DoctorUseCase(DoctorRepositoryPort repo,
                          CredentialsRepositoryPort credentialsRepo,
@@ -51,7 +55,7 @@ public class DoctorUseCase implements DoctorInterface {
                          AppointmentRepositoryPort appointmentRepo,
                          JwtProvider jwtProvider,
                          LocationService locationService,
-                         DoctorNatsClient natsClient) {
+                         DoctorNatsClient natsClient, RedisUtil redisUtil) {
         this.repo = repo;
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
@@ -60,6 +64,7 @@ public class DoctorUseCase implements DoctorInterface {
         this.jwtProvider = jwtProvider;
         this.locationService = locationService;
         this.natsClient = natsClient;
+        this.redisUtil = redisUtil;
     }
 
     @Override
@@ -177,17 +182,24 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public List<Doctor> getDoctorsByLocationText(@NotBlank String locationText) {
-        Location location = locationService.resolve(locationText);
-        List<Doctor> found = repo.findNearby(location.getGeohash(), location.getLatitude(), location.getLongitude());
-        enrichDoctorsWithScheduleStatus(found);
-        return found;
-    }
+    public List<Doctor> getDoctorsByLocation(@NotBlank String location) {
+        List<Doctor> found;
+            // Text resolution
+            Location resolved = locationService.resolve(location);
 
-    @Override
-    public List<Doctor> getDoctorsByLocationGeohash(@NotBlank String geohashPrefix) {
-        List<Doctor> found = repo.findByGeohashPrefix(geohashPrefix);
-        enrichDoctorsWithScheduleStatus(found);
+
+            // Check DB for exact match of resolved canonical name
+            found = repo.findByLocationText(resolved.getLocationText());
+            log.info("Doctors found by geohash: {}",resolved.getLocationText());
+
+            // If not found, fallback to geohash zoom-out logic
+            if (found == null || found.isEmpty()) {
+                found = repo.findNearby(resolved.getGeohash(), resolved.getLatitude(), resolved.getLongitude());
+
+                log.info("Doctors found by geohash zoom-out");
+            }
+
+            enrichDoctorsWithScheduleStatus(found);
         return found;
     }
 

@@ -2,7 +2,6 @@ package com.health.common.auth;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
-import io.jsonwebtoken.security.SignatureException;
 import io.micronaut.context.annotation.Property;
 import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +29,9 @@ public class JwtProvider {
 
     public String generateAccessToken(String userId, String role) {
         return Jwts.builder()
+                .header()
+                .type("JWT_Access")
+                .and()
                 .claim("uid", userId)
                 .claim("role", role)
                 .claim("type", "access")
@@ -41,6 +43,9 @@ public class JwtProvider {
 
     public String generateRefreshToken(String userId) {
         return Jwts.builder()
+                .header()
+                .type("JWT_Refresh")
+                .and()
                 .claim("uid", userId)
                 .claim("type", "refresh")
                 .issuedAt(new Date())
@@ -51,6 +56,9 @@ public class JwtProvider {
 
     public String generateResetToken(String userId, String role) {
         return Jwts.builder()
+                .header()
+                .type("JWT_Reset")
+                .and()
                 .claim("uid", userId)
                 .claim("role", role)
                 .claim("type", "reset")

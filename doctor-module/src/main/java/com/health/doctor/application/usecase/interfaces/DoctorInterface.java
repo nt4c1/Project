@@ -29,9 +29,7 @@ public interface DoctorInterface {
 
     List<Doctor> getDoctorsByClinic(@NotNull UUID clinicId);
 
-    List<Doctor> getDoctorsByLocationText(@NotBlank String locationText);
-
-    List<Doctor> getDoctorsByLocationGeohash(@NotBlank String geohashPrefix);
+    List<Doctor> getDoctorsByLocation(@NotBlank String location);
 
     void updateDoctorLocation(@NotNull UUID doctorId,UUID clinicId, @NotBlank String locationText);
 

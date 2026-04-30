@@ -38,6 +38,10 @@ message ClinicMessage {
   string location_text = 3;
 }
 
+message LocationSearchRequest {
+  string location = 1;
+}
+
 message AppointmentMessage {
   string            appointment_id      = 1;
   string            doctor_id           = 2;

@@ -361,27 +361,14 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     // ── Location ──────────────────────────────────────────────────────────────
 
     @Override
-    public void getNearbyDoctors(NearbyDoctorsRequest request,
-                                 StreamObserver<NearbyDoctorsResponse> observer) {
+    public void getDoctorsByLocation(com.health.grpc.common.LocationSearchRequest request,
+                                     StreamObserver<NearbyDoctorsResponse> observer) {
         handle(observer, () -> {
-            if (request.getLocationText().isBlank()) throw new DomainException("Location text is required", Status.INVALID_ARGUMENT);
-            List<Doctor> doctors = doctorUseCase.getDoctorsByLocationText(request.getLocationText());
+            if (request.getLocation().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
+            List<Doctor> doctors = doctorUseCase.getDoctorsByLocation(request.getLocation());
             List<DoctorMessage> doctorsMsg = doctors.stream().map(MapperClass::toMsg).toList();
             observer.onNext(NearbyDoctorsResponse.newBuilder()
                     .addAllDoctors(doctorsMsg)
-                    .build());
-            observer.onCompleted();
-        });
-    }
-
-    @Override
-    public void getDoctorsByLocation(ByLocationRequest request,
-                                     StreamObserver<ByLocationResponse> observer) {
-        handle(observer, () -> {
-            if (request.getGeohashPrefix().isBlank()) throw new DomainException("Geohash prefix is required", Status.INVALID_ARGUMENT);
-            List<Doctor> doctors = doctorUseCase.getDoctorsByLocationGeohash(request.getGeohashPrefix());
-            observer.onNext(ByLocationResponse.newBuilder()
-                    .addAllDoctors(doctors.stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build());
             observer.onCompleted();
         });

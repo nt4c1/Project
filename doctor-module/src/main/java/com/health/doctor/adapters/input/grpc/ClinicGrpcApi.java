@@ -143,6 +143,24 @@ public class ClinicGrpcApi extends ClinicGrpcServiceGrpc.ClinicGrpcServiceImplBa
     }
 
     @Override
+    public void getClinicsByLocation(com.health.grpc.common.LocationSearchRequest request, StreamObserver<FindNearByClinicResponse> observer) {
+        handle(observer, () -> {
+            if (request.getLocation().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
+            List<Clinic> clinics = clinicUseCase.getClinicsByLocation(request.getLocation());
+            observer.onNext(FindNearByClinicResponse.newBuilder()
+                    .addAllClinics(clinics.stream()
+                            .map(c -> ClinicMessage.newBuilder()
+                                    .setClinicId(c.getId().toString())
+                                    .setName(c.getName())
+                                    .setLocationText(c.getLocationText())
+                                    .build())
+                            .collect(Collectors.toList()))
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
     public void searchClinics(SearchClinicRequest request, StreamObserver<SearchClinicResponse> observer) {
         handle(observer, () -> {
             String name = request.getName();

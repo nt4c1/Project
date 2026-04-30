@@ -33,7 +33,6 @@ public class AuthInterceptor implements ServerInterceptor {
         if (methodName.endsWith("GenerateToken") || 
             methodName.endsWith("RegisterPatient") ||
             methodName.endsWith("ValidatePatientToken") ||
-            methodName.endsWith("GetNearbyDoctors") ||
             methodName.endsWith("GetDoctorsByLocation") ||
             methodName.endsWith("GetDoctorSchedule") ||
             methodName.endsWith("PatientExists")) {

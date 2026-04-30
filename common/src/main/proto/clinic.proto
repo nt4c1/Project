@@ -22,6 +22,7 @@ service ClinicGrpcService {
   rpc UpdateClinicLocation     (UpdateClinicLocationRequest) returns (UpdateClinicLocationResponse);
   rpc GetDoctorsByClinic       (GetByClinicRequest)          returns (GetByClinicResponse);
   rpc SearchClinics            (SearchClinicRequest)         returns (SearchClinicResponse);
+  rpc GetClinicsByLocation     (LocationSearchRequest)       returns (FindNearByClinicResponse);
 
 }
 
@@ -73,4 +74,8 @@ message SearchClinicResponse {
   repeated ClinicMessage clinics = 1;
   int32 total_pages = 2;
   int64 total_elements = 3;
+}
+
+message FindNearByClinicResponse {
+  repeated ClinicMessage clinics = 1;
 }

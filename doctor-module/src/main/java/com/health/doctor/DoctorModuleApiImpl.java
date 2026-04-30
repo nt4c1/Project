@@ -39,13 +39,8 @@ public class DoctorModuleApiImpl implements DoctorModuleApi {
     }
 
     @Override
-    public List<Doctor> getNearbyDoctors(String locationText) {
-        return doctorUseCase.getDoctorsByLocationText(locationText);
-    }
-
-    @Override
-    public List<Doctor> getDoctorsByGeohash(String geohashPrefix) {
-        return doctorUseCase.getDoctorsByLocationGeohash(geohashPrefix);
+    public List<Doctor> getDoctorsByLocation(String location) {
+        return doctorUseCase.getDoctorsByLocation(location);
     }
 
     @Override

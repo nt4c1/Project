@@ -1,7 +1,9 @@
 package com.health.common.redis;
 
-import java.util.concurrent.CompletableFuture;
+import com.fasterxml.jackson.core.type.TypeReference;
+
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 public interface RedisUtil {
 
@@ -13,6 +15,10 @@ public interface RedisUtil {
 
     <T> CompletableFuture<T> getAsync(String key, Class<T> type);
 
+    <T> T get(String key, TypeReference<T> typeRef);
+
+    <T> CompletableFuture<T> getAsync(String key, TypeReference<T> typeRef);
+
     Set<String> getKeys(String pattern);
 
     void delete(String key);
@@ -23,7 +29,7 @@ public interface RedisUtil {
 
     Long increment(String key, long ttlSeconds);
 
-    boolean tryLock(String key, long ttlMillis);
+    String tryLock(String key, long ttlMillis);
 
-    void releaseLock(String key);
+    boolean releaseLock(String key, String token);
 }

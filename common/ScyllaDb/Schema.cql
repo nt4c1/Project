@@ -153,6 +153,7 @@ CREATE TABLE doctors_by_location
 
 
 CREATE INDEX ON doctor_service.doctors_by_location (VALUES (geohash_prefixes));
+CREATE INDEX ON doctor_service.doctors_by_location (location_text);
 
 -- ============================================================
 --  DOCTOR SCHEDULES

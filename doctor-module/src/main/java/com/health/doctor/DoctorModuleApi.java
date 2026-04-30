@@ -21,8 +21,7 @@ import java.util.UUID;
 public interface DoctorModuleApi {
 
     // ── Doctor discovery ──────────────────────────────────────────────────────
-    List<Doctor> getNearbyDoctors(String locationText);
-    List<Doctor> getDoctorsByGeohash(String geohashPrefix);
+    List<Doctor> getDoctorsByLocation(String location);
     Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId, UUID clinicId);
 
     // ── Appointments (patient-initiated actions) ──────────────────────────────

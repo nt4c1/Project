@@ -31,8 +31,7 @@ service DoctorGrpcService {
   rpc GetDoctorSchedule        (GetScheduleRequest)          returns (GetScheduleResponse);
 
   // Location search
-  rpc GetNearbyDoctors         (NearbyDoctorsRequest)        returns (NearbyDoctorsResponse); //Distance calculate garera sort garxa
-  rpc GetDoctorsByLocation     (ByLocationRequest)           returns (ByLocationResponse); //GeoHash matrai map ko matra aauxa
+  rpc GetDoctorsByLocation     (LocationSearchRequest)       returns (NearbyDoctorsResponse);
 
   // Appointments
   rpc CreateAppointment        (CreateAppointmentRequest)    returns (CreateAppointmentResponse);
@@ -154,11 +153,7 @@ message GetScheduleResponse {
 
 // ── Location ───────────────────────────────────────────────
 
-message NearbyDoctorsRequest  {string location_text = 1;}
 message NearbyDoctorsResponse {repeated DoctorMessage doctors = 1;}
-
-message ByLocationRequest  {string geohash_prefix = 1;}
-message ByLocationResponse {repeated DoctorMessage doctors = 1;}
 
 // ── Appointments ───────────────────────────────────────────
 
