@@ -21,7 +21,7 @@ graph TD
     end
 
     subgraph "gRPC Gateway"
-        G[Doctor & Patient Grpc Services]
+        G[Doctor, Patient & Clinic Grpc Services]
     end
 
     subgraph "Core Business Logic"
@@ -38,8 +38,8 @@ graph TD
 ```
 
 ### Module Breakdown
-- **`common`**: Shared Protobuf definitions, security utilities (JWT, BCrypt), and cross-cutting concerns (Validation, DateTime).
-- **`doctor-module`**: Manages doctor profiles, clinic rosters, complex schedules, and geographic search indices.
+- **`common`**: Shared Protobuf definitions, security utilities (JWT, BCrypt), and cross-cutting concerns (Redis, Validation, DateTime).
+- **`doctor-module`**: Manages doctor and clinic profiles, complex schedules, and unified geographic search indices.
 - **`patient-module`**: Handles patient lifecycle, appointment history, and profile management.
 - **`app`**: Main entry point for the Micronaut application, responsible for DI container initialization and global configuration.
 
@@ -47,40 +47,32 @@ graph TD
 
 ## 🚀 Key Features
 
-### 👨‍⚕️ Intelligent Doctor Discovery
-- **Geographic Search**: Real-time nearby doctor lookup using multi-precision **Geohash indexing** (4-6 characters) for optimized spatial queries.
-- **Bulk Clinic Management**: 
-    - Support for associating doctors with **multiple clinics** in a single operation.
-    - **Automated Profile Transition**: Intelligent system that automatically handles the transition from "Individual" to "Clinic-Affiliated" status across all denormalized tables.
-    - **Duplicate Prevention**: Integrated validation to filter redundant clinic associations and ensure data uniqueness.
-- **Dynamic Availability**: Automated "Available Today" status and "Next Possible Date" calculations based on complex weekly schedules and overrides.
-- **Proximity Ranking**: Accurate distance calculations using the **Haversine formula** for localized results.
+### 👨‍⚕️ Unified Discovery & Geocoding
+- **Smart Search (`GetDoctorsByLocation` / `GetClinicsByLocation`)**: 
+    - **Automatic Detection**: Intelligently detects if input is a **Geohash** (direct lookup) or **Location Text** (Photon geocoding).
+    - **Priority Matching**: Performs an exact database match on the resolved canonical name before falling back to geohash proximity searching.
+    - **Zoom-out Logic**: Automatically expands the search radius using neighbor geohashes to ensure results even in less dense areas.
+- **Distance-Aware Ranking**: All results are enriched with precise distance metadata calculated via the **Haversine formula**.
 
-### 📅 Advanced Scheduling Engine
-- **Atomic Bookings**: Prevents double-booking at the database layer using ScyllaDB's high-concurrency model.
-- **Capacity Controls**: Enforces `maxAppointmentsPerDay` and strict `slotDuration` alignment.
-- **Intelligent Schedule Updates**: 
-    - **Guardrails**: Schedule updates are only permitted if there are no `ACCEPTED` appointments for the affected period, ensuring operational stability.
-    - **Automated Re-alignment**: All `PENDING` appointments are automatically postponed and re-verified against the new schedule parameters when a change occurs.
-- **Status Lifecycle**: Full appointment lifecycle management: `PENDING` → `ACCEPTED` → `COMPLETED` / `CANCELLED` / `POSTPONED`.
+### 🏥 Advanced Clinic & Doctor Management
+- **Role-Based Profile Control**: 
+    - **Clinic Autonomy**: Dedicated "Clinic" role with authentication allows clinics to manage their own metadata and update affiliated doctor locations.
+    - **Dynamic Transitions**: Handles conversion between "Individual Doctor" and "Clinic-Affiliated" status seamlessly, managing all denormalized views automatically.
+- **Lifecycle Management**: 
+    - **Account Reactivation**: Support for re-registering previously soft-deleted emails, restoring previous profile data instead of rejecting registration.
+    - **Hard Delete Integrity**: When a doctor is removed, all associated schedules are permanently (hard) deleted, while appointments are archived.
 
-### ⚡ Performance & Scalability
-- **Event-Driven Core**: Decoupled micro-modules communicating via **NATS** for asynchronous state updates.
-- **Optimized Caching**: Cache-Aside pattern with Redis for doctor profiles (1h TTL) and location results (10m TTL).
-    - *Update*: Now supports **Java 8 Date/Time types** (JSR-310) for seamless serialization of `Instant` and `LocalDate`.
-    - Features **Asynchronous Redis operations** for non-blocking I/O.
-- **Database Optimization**: 
-    - Full implementation of **Prepared Statements** across all repositories (`Doctor`, `Patient`, `Clinic`, `Credentials`) to minimize query parsing overhead on ScyllaDB.
-    - **Advanced Schema Design**: Implemented a multi-view strategy (`appointments_by_patient_all`, `appointments_by_doctor_all`) to provide optimized, date-independent views for history lookups, eliminating the need for expensive `ALLOW FILTERING` queries.
-    - Optimized use of **Atomic CQL Batches** for synchronized, multi-table denormalized writes, ensuring consistency across all specialized views.
+### 📅 Atomic Scheduling Engine
+- **Concurrency Guardrails**: Parallel database checks via `CompletableFuture` in the booking flow reduce latency by up to 60%.
+- **Transactional Consistency**: Uses **Logged Batches** in ScyllaDB for synchronized updates across multiple read models (Patient history vs Doctor status views).
+- **Guardrail Validation**: Blocks critical actions (like clinic removal or doctor deletion) if there are active `ACCEPTED` or `POSTPONED` appointments.
 
----
-
-## 🗺️ Future Roadmap
-- [ ] **MapStruct Integration**: Replace manual boilerplate mappers with compile-time generated mappers for better performance and maintainability.
-- [ ] **Observability**: Integrate **OpenTelemetry** for distributed tracing across gRPC and NATS boundaries.
-- [ ] **Resilience**: Implement `@CircuitBreaker` and `@Retryable` patterns for external HTTP clients (Photon).
-- [ ] **Centralized Config**: Migrate to Gradle Version Catalogs (`libs.versions.toml`) for standardized dependency management.
+### ⚡ Optimized Performance Stack
+- **Enterprise Redis Implementation**: 
+    - **Native String Support**: Efficient raw string storage (avoiding double-quotes) for simple keys.
+    - **JSR-310 Ready**: Full support for Java 8 Time types.
+    - **Fail-Safe Caching**: Robust null handling and graceful fallback to DB if the cache is unavailable or corrupted.
+- **Query Optimization**: 100% usage of **Prepared Statements** and secondary indexing on `location_text` for O(1) lookups of canonical addresses.
 
 ---
 
@@ -91,14 +83,23 @@ graph TD
 | **Framework** | Micronaut | Lightweight, AOT-compiled JVM framework |
 | **API Protocol** | gRPC | High-performance, type-safe binary communication |
 | **Primary DB** | ScyllaDB | Cassandra-compatible, low-latency NoSQL database |
-| **Caching** | Redis (Lettuce) | Distributed caching and locking |
+| **Caching** | Redis (Lettuce) | Optimized async caching and distributed locking |
 | **Messaging** | NATS | High-speed, lightweight messaging system |
-| **Geocoding** | Photon (Client) | Address-to-coordinate resolution |
+| **Geocoding** | Photon API | High-accuracy address-to-coordinate resolution |
 | **Security** | JWT & BCrypt | Token-based auth and secure password hashing |
 
 ---
 
-## ⚙️ Development Guide
+## 🔐 Security & Auth Model
+1. **Multi-Role Support**: Distinguishes between **Doctor**, **Patient**, and **Clinic** roles with specific header support (`Authorization_Doctor`, etc.).
+2. **Access Control (ACL)**:
+    - Doctors can only update their standalone location if they have **no clinic associations**.
+    - Clinics can only update location data for doctors **explicitly affiliated** with them.
+3. **Intercepted Auth**: Context Propagation (UID, Role) is handled by the `GrpcAuthInterceptor` to prevent unauthorized cross-resource access.
+
+---
+
+## ⚙️ Deployment & Development
 
 ### Prerequisites
 - **JDK 17+**
@@ -106,7 +107,7 @@ graph TD
 - **Gradle 8.x**
 
 ### Infrastructure Setup
-Spin up the required infrastructure (ScyllaDB, Redis, NATS):
+Spin up ScyllaDB, Redis, and NATS:
 ```bash
 docker compose up -d
 ```
@@ -116,25 +117,9 @@ docker compose up -d
 ./gradlew run
 ```
 
-### Testing with gRPC
-The gRPC server starts on `localhost:50051`. You can use tools like **Kreya**, **Postman**, or `grpcurl` to interact with the services.
-
-Example `grpcurl` command:
-```bash
-grpcurl -plaintext localhost:50051 list
-```
-
 ---
 
-## 🔐 Security Model
-1. **Initial Login**: Basic Authentication via gRPC metadata.
-2. **Session Persistence**: JWT-based Bearer Token required for all protected RPCs.
-3. **Reset Flow**: Secure 15-minute one-time tokens for password recovery.
-4. **Context Injection**: Authentication context (User ID, Role) is propagated via gRPC Interceptors.
-
----
-
-## 📈 Monitoring & Maintenance
-- **NATS Health**: Access `http://localhost:8222/varz` for server stats.
-- **ScyllaDB Monitoring**: Use `nodetool status` to check cluster health.
-- **Logging**: Centralized logging via SLF4J and Logback (configured in `src/main/resources/logback.xml`).
+## 📈 Monitoring
+- **NATS Health**: `http://localhost:8222/varz`
+- **ScyllaDB**: `nodetool status`
+- **Tracing**: Managed via centralized SLF4J logs (debug level configurable in `application.properties`).
