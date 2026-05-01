@@ -6,7 +6,6 @@ import io.lettuce.core.KeyScanCursor;
 import io.lettuce.core.RedisFuture;
 import io.lettuce.core.ScanArgs;
 import io.lettuce.core.ScanCursor;
-import io.lettuce.core.ScriptOutputType;
 import io.lettuce.core.SetArgs;
 import io.lettuce.core.api.StatefulRedisConnection;
 import jakarta.inject.Singleton;
@@ -23,30 +22,13 @@ import java.util.concurrent.CompletionException;
 @Slf4j
 @Singleton
 public class RedisUtilImpl implements RedisUtil {
-    //Lua script for atomic INCR + conditional EXPIRE  Redis treats this as single
-    private static final String INCR_WITH_TTL_SCRIPT = """
-            local v = redis.call('INCR', KEYS[1])
-            if v == 1 and tonumber(ARGV[1]) > 0 then
-                redis.call('EXPIRE', KEYS[1], ARGV[1])
-            end
-            return v
-            """;
-
-    //Lua script for releasing lock
-    private static final String RELEASE_LOCK_SCRIPT = """
-            if redis.call('get', KEYS[1]) == ARGV[1] then
-                return redis.call('del', KEYS[1])
-            else
-                return 0
-            end
-            """;
 
     private final StatefulRedisConnection<String, String> connection;
     private final ObjectMapper objectMapper;
 
     public RedisUtilImpl(StatefulRedisConnection<String, String> connection,
                          ObjectMapper objectMapper) {
-        this.connection = connection;
+        this.connection   = connection;
         this.objectMapper = objectMapper;
     }
 
@@ -99,7 +81,7 @@ public class RedisUtilImpl implements RedisUtil {
             return deserialize(value, type);
         } catch (Exception e) {
             log.error("Redis GET failed for key: {}, type: {}", key, type.getSimpleName(), e);
-            return null; // allow DB fallback
+            return null;
         }
     }
 
@@ -158,8 +140,8 @@ public class RedisUtilImpl implements RedisUtil {
     @Override
     public Set<String> getKeys(String pattern) {
         try {
-            List<String> result = new ArrayList<>();
-            ScanArgs args = ScanArgs.Builder.matches(pattern).limit(200);
+            List<String>          result = new ArrayList<>();
+            ScanArgs              args   = ScanArgs.Builder.matches(pattern).limit(200);
             KeyScanCursor<String> cursor = connection.sync().scan(ScanCursor.INITIAL, args);
             result.addAll(cursor.getKeys());
 
@@ -194,10 +176,6 @@ public class RedisUtilImpl implements RedisUtil {
                 });
     }
 
-    // -------------------------------------------------------------------------
-    // EXISTS
-    // -------------------------------------------------------------------------
-
     @Override
     public boolean exists(String key) {
         try {
@@ -212,12 +190,11 @@ public class RedisUtilImpl implements RedisUtil {
     @Override
     public Long increment(String key, long ttlSeconds) {
         try {
-            return (Long) connection.sync().eval(
-                    INCR_WITH_TTL_SCRIPT,
-                    ScriptOutputType.INTEGER,
-                    new String[]{key},
-                    String.valueOf(ttlSeconds)
-            );
+            Long count = connection.sync().incr(key);
+            if (count != null && ttlSeconds > 0) {
+                connection.sync().expire(key, ttlSeconds);
+            }
+            return count;
         } catch (Exception e) {
             log.error("Redis INCR failed for key: {}", key, e);
             return null;
@@ -230,7 +207,7 @@ public class RedisUtilImpl implements RedisUtil {
             throw new IllegalArgumentException("ttlMillis must be > 0 to prevent indefinite locks");
         }
         try {
-            String token = UUID.randomUUID().toString();
+            String token  = UUID.randomUUID().toString();
             String result = connection.sync().set(key, token, SetArgs.Builder.nx().px(ttlMillis));
             return "OK".equals(result) ? token : null;
         } catch (Exception e) {
@@ -242,13 +219,13 @@ public class RedisUtilImpl implements RedisUtil {
     @Override
     public boolean releaseLock(String key, String token) {
         try {
-            Long result = (Long) connection.sync().eval(
-                    RELEASE_LOCK_SCRIPT,
-                    ScriptOutputType.INTEGER,
-                    new String[]{key},
-                    token
-            );
-            return result != null && result == 1L;
+            String stored = connection.sync().get(key);
+            if (stored == null || !stored.equals(token)) {
+                // Lock already expired or held by someone else — do not delete
+                return false;
+            }
+            connection.sync().del(key);
+            return true;
         } catch (Exception e) {
             log.error("Redis releaseLock failed for key: {}", key, e);
             return false;

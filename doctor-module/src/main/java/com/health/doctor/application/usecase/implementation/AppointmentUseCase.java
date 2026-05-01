@@ -9,6 +9,11 @@ import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
 import com.health.doctor.adapters.output.nats.DoctorNatsClient;
+import com.health.doctor.mapper.MapperClass;
+import com.health.grpc.notification.AppointmentAcceptedEvent;
+import com.health.grpc.notification.AppointmentBookedEvent;
+import com.health.grpc.notification.AppointmentCancelledEvent;
+import com.health.grpc.notification.AppointmentPostponedEvent;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
@@ -96,7 +101,9 @@ public class AppointmentUseCase implements AppointmentInterface {
         appointment.setReasonForVisit(reasonForVisit);
         repo.save(appointment);
         
-        natsClient.sendAppointmentCreated(appointmentId.toString());
+        natsClient.sendAppointmentCreated(AppointmentBookedEvent.newBuilder()
+                .setAppointment(MapperClass.toApptMsg(appointment))
+                .build());
         
         return appointmentId;
     }
@@ -108,7 +115,11 @@ public class AppointmentUseCase implements AppointmentInterface {
                     "Only Pending Appointments can be accepted, Current status: " + appointment.getStatus()
             );
         repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED.name());
-        natsClient.sendAppointmentAccepted(appointment.getId().toString());
+        appointment.setStatus(AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED);
+        
+        natsClient.sendAppointmentAccepted(AppointmentAcceptedEvent.newBuilder()
+                .setAppointment(MapperClass.toApptMsg(appointment))
+                .build());
     }
 
     @Override
@@ -119,7 +130,16 @@ public class AppointmentUseCase implements AppointmentInterface {
                                    @NotNull LocalTime time,
                                    @NotBlank String cancellationReason) {
         repo.cancel(appointmentId, patientId, doctorId, date, time, cancellationReason);
-        natsClient.sendAppointmentCancelled(appointmentId.toString());
+        
+        // Build a minimal appointment for the event
+        Appointment a = new Appointment(appointmentId, doctorId, patientId, date, time, 
+                AppointmentStatus.APPOINTMENT_STATUS_CANCELLED, Instant.now(), Instant.now());
+        a.setCancellationReason(cancellationReason);
+        
+        natsClient.sendAppointmentCancelled(AppointmentCancelledEvent.newBuilder()
+                .setAppointment(MapperClass.toApptMsg(a))
+                .setCancelledBy("UNKNOWN") // Could be enriched if we had more context
+                .build());
     }
 
     @Override
@@ -145,7 +165,11 @@ public class AppointmentUseCase implements AppointmentInterface {
         );
         postponed.setClinicId(appointment.getClinicId());
         repo.postpone(oldDate, postponed);
-        natsClient.sendAppointmentPostponed(appointment.getId().toString());
+        
+        natsClient.sendAppointmentPostponed(AppointmentPostponedEvent.newBuilder()
+                .setAppointment(MapperClass.toApptMsg(postponed))
+                .setOldDate(oldDate.toString())
+                .build());
     }
 
     private LocalDate nextWorkingDay(LocalDate from, DoctorSchedule schedule) {

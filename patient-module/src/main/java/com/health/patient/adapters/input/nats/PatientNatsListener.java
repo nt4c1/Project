@@ -1,5 +1,9 @@
 package com.health.patient.adapters.input.nats;
 
+import com.health.grpc.notification.AppointmentAcceptedEvent;
+import com.health.grpc.notification.AppointmentBookedEvent;
+import com.health.grpc.notification.AppointmentCancelledEvent;
+import com.health.grpc.notification.AppointmentPostponedEvent;
 import io.micronaut.nats.annotation.NatsListener;
 import io.micronaut.nats.annotation.Subject;
 import lombok.extern.slf4j.Slf4j;
@@ -24,12 +28,30 @@ public class PatientNatsListener {
     }
 
     @Subject("appointment.created")
-    public void onAppointmentCreated(String appointmentId) {
-        log.info("Received NATS message: Appointment created with ID: {}", appointmentId);
+    public void onAppointmentCreated(AppointmentBookedEvent event) {
+        var appt = event.getAppointment();
+        log.info("NOTIFICATION: New Appointment Booked! ID: {}, Patient: {}, Doctor: {}, Date: {}, Time: {}",
+                appt.getAppointmentId(), appt.getPatientName(), appt.getDoctorName(), appt.getDate(), appt.getTime());
     }
 
-    @Subject("appointment.updated")
-    public void onAppointmentUpdated(String appointmentId) {
-        log.info("Received NATS message: Appointment updated with ID: {}", appointmentId);
+    @Subject("appointment.accepted")
+    public void onAppointmentAccepted(AppointmentAcceptedEvent event) {
+        var appt = event.getAppointment();
+        log.info("NOTIFICATION: Appointment ACCEPTED! ID: {}, Patient: {}, Doctor: {}, Date: {}, Time: {}",
+                appt.getAppointmentId(), appt.getPatientName(), appt.getDoctorName(), appt.getDate(), appt.getTime());
+    }
+
+    @Subject("appointment.postponed")
+    public void onAppointmentPostponed(AppointmentPostponedEvent event) {
+        var appt = event.getAppointment();
+        log.info("NOTIFICATION: Appointment POSTPONED! ID: {}, From {} To {}, Patient: {}, Doctor: {}",
+                appt.getAppointmentId(), event.getOldDate(), appt.getDate(), appt.getPatientName(), appt.getDoctorName());
+    }
+
+    @Subject("appointment.cancelled")
+    public void onAppointmentCancelled(AppointmentCancelledEvent event) {
+        var appt = event.getAppointment();
+        log.info("NOTIFICATION: Appointment CANCELLED! ID: {}, Reason: {}, CancelledBy: {}",
+                appt.getAppointmentId(), appt.getCancellationReason(), event.getCancelledBy());
     }
 }

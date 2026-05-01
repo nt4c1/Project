@@ -1,5 +1,9 @@
 package com.health.doctor.adapters.output.nats;
 
+import com.health.grpc.notification.AppointmentAcceptedEvent;
+import com.health.grpc.notification.AppointmentBookedEvent;
+import com.health.grpc.notification.AppointmentCancelledEvent;
+import com.health.grpc.notification.AppointmentPostponedEvent;
 import io.micronaut.nats.annotation.NatsClient;
 import io.micronaut.nats.annotation.Subject;
 
@@ -16,17 +20,14 @@ public interface DoctorNatsClient {
     void sendDoctorDeleted(String doctorId);
 
     @Subject("appointment.created")
-    void sendAppointmentCreated(String appointmentId);
-
-    @Subject("appointment.updated")
-    void sendAppointmentUpdated(String appointmentId);
+    void sendAppointmentCreated(AppointmentBookedEvent event);
 
     @Subject("appointment.accepted")
-    void sendAppointmentAccepted(String appointmentId);
+    void sendAppointmentAccepted(AppointmentAcceptedEvent event);
 
     @Subject("appointment.postponed")
-    void sendAppointmentPostponed(String appointmentId);
+    void sendAppointmentPostponed(AppointmentPostponedEvent event);
 
     @Subject("appointment.cancelled")
-    void sendAppointmentCancelled(String appointmentId);
+    void sendAppointmentCancelled(AppointmentCancelledEvent event);
 }
