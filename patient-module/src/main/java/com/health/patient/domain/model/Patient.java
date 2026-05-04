@@ -12,7 +12,6 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 public class Patient implements Serializable {
-    private static final long serialVersionUID = 1L;
 
     private UUID id;
     private String name;
@@ -22,11 +21,6 @@ public class Patient implements Serializable {
     private boolean isDeleted;
     private Instant createdAt;
     private Instant updatedAt;
-
-    public Patient(UUID id, String name) {
-        this.id   = id;
-        this.name = name;
-    }
 
     public Patient(UUID id, String name, String email, String phone, String passwordHash) {
         this.id           = id;

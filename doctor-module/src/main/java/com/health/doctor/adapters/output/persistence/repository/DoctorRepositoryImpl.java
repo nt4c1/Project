@@ -593,9 +593,6 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         }
         session.execute(batch.build());
 
-        // Fix: re-read to get the fresh Doctor object then cache it.
-        // (Phone/email live in doctor_credentials, not in the doctors table,
-        //  so we must re-read to get the canonical merged view.)
         findById(doctorId).ifPresent(updated ->
                 redisUtil.setAsync(CACHE_DOCTOR_PREFIX + doctorId, updated, TTL_DOCTOR));
     }

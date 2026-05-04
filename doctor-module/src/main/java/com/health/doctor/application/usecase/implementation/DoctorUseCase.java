@@ -183,23 +183,41 @@ public class DoctorUseCase implements DoctorInterface {
 
     @Override
     public List<Doctor> getDoctorsByLocation(@NotBlank String location) {
-        List<Doctor> found;
-            // Text resolution
-            Location resolved = locationService.resolve(location);
-
-
-            // Check DB for exact match of resolved canonical name
-            found = repo.findByLocationText(resolved.getLocationText());
-            log.info("Doctors found by geohash: {}",resolved.getLocationText());
-
-            // If not found, fallback to geohash zoom-out logic
-            if (found == null || found.isEmpty()) {
-                found = repo.findNearby(resolved.getGeohash(), resolved.getLatitude(), resolved.getLongitude());
-
-                log.info("Doctors found by geohash zoom-out");
+        // Resolve text to coordinates and canonical location info
+        Location resolved = locationService.resolve(location);
+        String geohash = resolved.getGeohash();
+        String prefix = geohash.substring(0, Math.min(geohash.length(), 6));
+        
+        // Try Geohash Cache first
+        String geoCacheKey = CACHE_LOCATION_PREFIX + "nb:" + prefix;
+        try {
+            List<Doctor> cached = redisUtil.get(geoCacheKey, new com.fasterxml.jackson.core.type.TypeReference<List<Doctor>>() {});
+            if (cached != null) {
+                log.info("Redis cache hit for Nearby (Geohash): {}", prefix);
+                enrichDoctorsWithScheduleStatus(cached);
+                return cached;
             }
+        } catch (Exception e) {
+            log.warn("Redis GET failed for Geohash cache: {}", e.getMessage());
+        }
 
-            enrichDoctorsWithScheduleStatus(found);
+        // Database Search
+        List<Doctor> found = repo.findByLocationText(resolved.getLocationText());
+        log.info("Doctors found by Location_Text: {} (count: {})", resolved.getLocationText(), found != null ? found.size() : 0);
+
+        // Database Search Fallback: Geohash zoom-out
+        if (found == null || found.isEmpty()) {
+            found = repo.findNearby(geohash, resolved.getLatitude(), resolved.getLongitude());
+            log.info("Doctors found by geohash zoom-out (count: {})", found != null ? found.size() : 0);
+        }
+
+        // Enrich and Cache the final result against the geohash
+        enrichDoctorsWithScheduleStatus(found);
+        
+        if (found != null && !found.isEmpty()) {
+            redisUtil.setAsync(geoCacheKey, found, TTL_LOCATION);
+        }
+
         return found;
     }
 
