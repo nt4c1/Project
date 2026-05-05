@@ -202,6 +202,28 @@ public class RedisUtilImpl implements RedisUtil {
     }
 
     @Override
+    public void lpush(String key, String value, int limit) {
+        try {
+            connection.sync().lpush(key, value);
+            if (limit > 0) {
+                connection.sync().ltrim(key, 0, limit - 1);
+            }
+        } catch (Exception e) {
+            log.error("Redis LPUSH failed for key: {}", key, e);
+        }
+    }
+
+    @Override
+    public List<String> lrange(String key, int start, int end) {
+        try {
+            return connection.sync().lrange(key, start, end);
+        } catch (Exception e) {
+            log.error("Redis LRANGE failed for key: {}", key, e);
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
     public String tryLock(String key, long ttlMillis) {
         if (ttlMillis <= 0) {
             throw new IllegalArgumentException("ttlMillis must be > 0 to prevent indefinite locks");

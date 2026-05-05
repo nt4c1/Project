@@ -251,6 +251,7 @@ CREATE TABLE appointments_by_id
     reason_for_visit    TEXT,
     doctor_notes        TEXT,
     cancellation_reason TEXT,
+    meeting_link        TEXT,
     created_at          TIMESTAMP,
     updated_at          TIMESTAMP
 );
@@ -270,6 +271,7 @@ CREATE TABLE appointments_by_doctor
     reason_for_visit    TEXT,
     doctor_notes        TEXT,
     cancellation_reason TEXT,
+    meeting_link        TEXT,
     created_at          TIMESTAMP,
     updated_at          TIMESTAMP,
     PRIMARY KEY ((doctor_id, appointment_date), scheduled_time, appointment_id)
@@ -288,7 +290,8 @@ CREATE TABLE appointments_by_doctor_status
     clinic_id        UUID,
     patient_name     TEXT,
     patient_phone    TEXT,
-    reason_for_visit TEXT,
+    reason_for_visit    TEXT,
+    meeting_link        TEXT,
     PRIMARY KEY ((doctor_id, status, appointment_date), scheduled_time, appointment_id)
 ) WITH CLUSTERING ORDER BY (scheduled_time ASC, appointment_id ASC)
    AND default_time_to_live = 15552000;
@@ -308,6 +311,7 @@ CREATE TABLE appointments_by_patient
     status              TEXT,
     reason_for_visit    TEXT,
     cancellation_reason TEXT,
+    meeting_link        TEXT,
     PRIMARY KEY ((patient_id, appointment_date), scheduled_time, appointment_id)
 ) WITH CLUSTERING ORDER BY (scheduled_time ASC, appointment_id ASC)
    AND default_time_to_live = 15552000;
@@ -327,6 +331,7 @@ CREATE TABLE appointments_by_doctor_all
     reason_for_visit    TEXT,
     doctor_notes        TEXT,
     cancellation_reason TEXT,
+    meeting_link        TEXT,
     created_at          TIMESTAMP,
     updated_at          TIMESTAMP,
     PRIMARY KEY (doctor_id, appointment_date, scheduled_time, appointment_id)
@@ -348,6 +353,7 @@ CREATE TABLE appointments_by_patient_all
     status              TEXT,
     reason_for_visit    TEXT,
     cancellation_reason TEXT,
+    meeting_link        TEXT,
     PRIMARY KEY (patient_id, appointment_date, scheduled_time, appointment_id)
 ) WITH CLUSTERING ORDER BY (appointment_date DESC, scheduled_time DESC, appointment_id ASC)
    AND default_time_to_live = 15552000;
@@ -362,3 +368,44 @@ CREATE TABLE appointment_count_by_doctor_date
     count            COUNTER,
     PRIMARY KEY (doctor_id, appointment_date)
 );
+
+-- ============================================================
+--  REVIEWS
+-- ============================================================
+CREATE TABLE doctor_reviews
+(
+    doctor_id    UUID,
+    patient_id   UUID,
+    patient_name TEXT,
+    rating       INT,
+    comment      TEXT,
+    created_at   TIMESTAMP,
+    PRIMARY KEY (doctor_id, created_at, patient_id)
+) WITH CLUSTERING ORDER BY (created_at DESC, patient_id ASC);
+
+-- ============================================================
+--  ADMINS
+-- ============================================================
+CREATE TABLE admins
+(
+    admin_id      UUID PRIMARY KEY,
+    name          TEXT,
+    email         TEXT,
+    password_hash TEXT,
+    created_at    TIMESTAMP,
+    updated_at    TIMESTAMP
+);
+
+CREATE TABLE admins_by_email
+(
+    email    TEXT PRIMARY KEY,
+    admin_id UUID
+);
+
+-- Seed Admin (Password: Admin12345@)
+-- Hash generated for Admin12345@ using BCrypt
+INSERT INTO admins (admin_id, name, email, password_hash, created_at, updated_at)
+VALUES (11111111-1111-1111-1111-111111111111, 'System Admin', 'admin@health.com', '$2a$12$kmOEra.opcLHUnnZ0dtrqevl9JhbKmZeh5ADAZch9LhmFG5MkJx8m', toTimestamp(now()), toTimestamp(now()));
+
+INSERT INTO admins_by_email (email, admin_id)
+VALUES ('admin@health.com', 11111111-1111-1111-1111-111111111111);

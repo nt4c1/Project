@@ -25,3 +25,11 @@ message AppointmentCancelledEvent {
   AppointmentMessage appointment = 1;
   string cancelled_by = 2;  // DOCTOR | PATIENT
 }
+
+message AppointmentCompletedEvent {
+  AppointmentMessage appointment = 1;
+}
+
+message AppointmentNoShowEvent {
+  AppointmentMessage appointment = 1;
+}

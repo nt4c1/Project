@@ -3,6 +3,7 @@ package com.health.doctor.application.usecase.implementation;
 import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.common.auth.JwtProvider;
 import com.health.common.exception.AlreadyExistsException;
+import com.health.common.exception.BookingException;
 import com.health.common.exception.NotFoundException;
 import com.health.common.redis.RedisUtil;
 import com.health.common.utils.DateTimeUtils;
@@ -44,6 +45,8 @@ public class DoctorUseCase implements DoctorInterface {
     private final LocationService locationService;
     private final DoctorNatsClient natsClient;
     private final RedisUtil redisUtil;
+    private final ReviewRepositoryPort reviewRepo;
+    private final PatientLookUpPort patientLookUp;
     private static final String CACHE_LOCATION_PREFIX = "doctor-location:";
     private static final long TTL_LOCATION = 600; // 10m
 
@@ -55,7 +58,10 @@ public class DoctorUseCase implements DoctorInterface {
                          AppointmentRepositoryPort appointmentRepo,
                          JwtProvider jwtProvider,
                          LocationService locationService,
-                         DoctorNatsClient natsClient, RedisUtil redisUtil) {
+                         DoctorNatsClient natsClient, 
+                         RedisUtil redisUtil,
+                         ReviewRepositoryPort reviewRepo,
+                         PatientLookUpPort patientLookUp) {
         this.repo = repo;
         this.credentialsRepo = credentialsRepo;
         this.clinicRepo = clinicRepo;
@@ -65,6 +71,8 @@ public class DoctorUseCase implements DoctorInterface {
         this.locationService = locationService;
         this.natsClient = natsClient;
         this.redisUtil = redisUtil;
+        this.reviewRepo = reviewRepo;
+        this.patientLookUp = patientLookUp;
     }
 
     @Override
@@ -182,7 +190,7 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public List<Doctor> getDoctorsByLocation(@NotBlank String location) {
+    public List<Doctor> getDoctorsByLocation(@NotBlank String location, com.health.grpc.common.AvailabilityFilter filter) {
         // Resolve text to coordinates and canonical location info
         Location resolved = locationService.resolve(location);
         String geohash = resolved.getGeohash();
@@ -190,35 +198,101 @@ public class DoctorUseCase implements DoctorInterface {
         
         // Try Geohash Cache first
         String geoCacheKey = CACHE_LOCATION_PREFIX + "nb:" + prefix;
+        List<Doctor> found = null;
         try {
-            List<Doctor> cached = redisUtil.get(geoCacheKey, new com.fasterxml.jackson.core.type.TypeReference<List<Doctor>>() {});
-            if (cached != null) {
+            found = redisUtil.get(geoCacheKey, new com.fasterxml.jackson.core.type.TypeReference<List<Doctor>>() {});
+            if (found != null) {
                 log.info("Redis cache hit for Nearby (Geohash): {}", prefix);
-                enrichDoctorsWithScheduleStatus(cached);
-                return cached;
             }
         } catch (Exception e) {
             log.warn("Redis GET failed for Geohash cache: {}", e.getMessage());
         }
 
-        // Database Search
-        List<Doctor> found = repo.findByLocationText(resolved.getLocationText());
-        log.info("Doctors found by Location_Text: {} (count: {})", resolved.getLocationText(), found != null ? found.size() : 0);
+        // Database Search if not in cache
+        if (found == null) {
+            found = repo.findByLocationText(resolved.getLocationText());
+            log.info("Doctors found by Location_Text: {} (count: {})", resolved.getLocationText(), found != null ? found.size() : 0);
 
-        // Database Search Fallback: Geohash zoom-out
-        if (found == null || found.isEmpty()) {
-            found = repo.findNearby(geohash, resolved.getLatitude(), resolved.getLongitude());
-            log.info("Doctors found by geohash zoom-out (count: {})", found != null ? found.size() : 0);
+            if (found == null || found.isEmpty()) {
+                found = repo.findNearby(geohash, resolved.getLatitude(), resolved.getLongitude());
+                log.info("Doctors found by geohash zoom-out (count: {})", found != null ? found.size() : 0);
+            }
+
+            if (found != null && !found.isEmpty()) {
+                redisUtil.setAsync(geoCacheKey, found, TTL_LOCATION);
+            }
         }
 
-        // Enrich and Cache the final result against the geohash
+        // Enrich with current schedule status
         enrichDoctorsWithScheduleStatus(found);
-        
-        if (found != null && !found.isEmpty()) {
-            redisUtil.setAsync(geoCacheKey, found, TTL_LOCATION);
+        enrichDoctorsWithRatings(found);
+
+        // Apply Instant Availability Filters
+        if (found != null && filter != null && filter != com.health.grpc.common.AvailabilityFilter.AVAILABILITY_FILTER_UNSPECIFIED) {
+            found = applyAvailabilityFilter(found, filter);
         }
 
         return found;
+    }
+
+    private void enrichDoctorsWithRatings(List<Doctor> doctors) {
+        if (doctors == null || doctors.isEmpty()) return;
+        for (Doctor d : doctors) {
+            d.setAverageRating(reviewRepo.getAverageRating(d.getId()));
+        }
+    }
+
+    @Override
+    public void addReview(@NotNull UUID doctorId, @NotNull UUID patientId, int rating, String comment) {
+        if (rating < 1 || rating > 10) throw new InvalidArgumentException("Rating must be between 1 and 10");
+
+        List<Appointment> patientAppointments = appointmentRepo.findByPatient(patientId);
+        boolean hasCompletedAppointment = patientAppointments.stream()
+                .anyMatch(a -> doctorId.equals(a.getDoctorId()) && 
+                               a.getStatus() == AppointmentStatus.APPOINTMENT_STATUS_COMPLETED);
+
+        if (!hasCompletedAppointment) {
+            throw new BookingException("You can only review a doctor after a completed appointment.");
+        }
+
+        String patientName = patientLookUp.findById(patientId)
+                .map(p -> p.name())
+                .orElse("Anonymous Patient");
+
+        Review review = new Review(doctorId, patientId, patientName, rating, comment, Instant.now());
+        reviewRepo.save(review);
+        log.info("Review added for doctor {} by patient {}", doctorId, patientId);
+    }
+
+    @Override
+    public List<Review> getDoctorReviews(@NotNull UUID doctorId) {
+        return reviewRepo.findByDoctorId(doctorId);
+    }
+
+    @Override
+    public double getAverageRating(@NotNull UUID doctorId) {
+        return reviewRepo.getAverageRating(doctorId);
+    }
+
+    private List<Doctor> applyAvailabilityFilter(List<Doctor> doctors, com.health.grpc.common.AvailabilityFilter filter) {
+        if (filter == com.health.grpc.common.AvailabilityFilter.AVAILABILITY_FILTER_NOW) {
+            return doctors.stream()
+                    .filter(Doctor::isActive)
+                    .collect(Collectors.toList());
+        } else if (filter == com.health.grpc.common.AvailabilityFilter.AVAILABILITY_FILTER_THIS_WEEKEND) {
+            return doctors.stream()
+                    .filter(d -> {
+                        String next = d.getNextPossibleDate();
+                        return next != null && (next.toLowerCase().contains("saturday") || next.toLowerCase().contains("sunday") || isWorkingThisWeekend(d.getId()));
+                    })
+                    .collect(Collectors.toList());
+        }
+        return doctors;
+    }
+
+    private boolean isWorkingThisWeekend(UUID doctorId) {
+        return scheduleRepo.findByDoctors(List.of(doctorId)).stream()
+                .anyMatch(s -> s.getWorkingDays().contains(DayOfWeek.SATURDAY) || s.getWorkingDays().contains(DayOfWeek.SUNDAY));
     }
 
     private void enrichDoctorsWithScheduleStatus(List<Doctor> doctors) {

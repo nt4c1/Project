@@ -30,17 +30,21 @@ service DoctorGrpcService {
   rpc UpdateSchedule           (UpdateScheduleRequest)       returns (UpdateScheduleResponse);
   rpc GetDoctorSchedule        (GetScheduleRequest)          returns (GetScheduleResponse);
 
+  // Reviews
+  rpc AddReview                (AddReviewRequest)            returns (AddReviewResponse);
+  rpc GetDoctorReviews         (GetReviewsRequest)           returns (GetReviewsResponse);
+
   // Location search
   rpc GetDoctorsByLocation     (LocationSearchRequest)       returns (NearbyDoctorsResponse);
 
   // Appointments
-  rpc CreateAppointment        (CreateAppointmentRequest)    returns (CreateAppointmentResponse);
-  rpc CancelAppointment        (CancelAppointmentRequest)    returns (CancelAppointmentResponse);
   rpc GetAppointments          (GetAppointmentsRequest)      returns (GetAppointmentsResponse);
   rpc GetPendingAppointments   (GetAppointmentsRequest)      returns (GetAppointmentsResponse);
-  rpc GetMyAppointments        (GetMyAppointmentsRequest)    returns (GetMyAppointmentsResponse);
   rpc AcceptAppointment        (AppointmentActionRequest)    returns (AppointmentActionResponse);
   rpc PostponeAppointment      (AppointmentActionRequest)    returns (AppointmentActionResponse);
+  rpc CompleteAppointment      (AppointmentActionRequest)    returns (AppointmentActionResponse);
+  rpc NoShowAppointment        (AppointmentActionRequest)    returns (AppointmentActionResponse);
+  rpc CancelAppointment        (CancelAppointmentRequest)    returns (CancelAppointmentResponse);
 }
 
 // ── Doctor ─────────────────────────────────────────────────
@@ -157,20 +161,6 @@ message NearbyDoctorsResponse {repeated DoctorMessage doctors = 1;}
 
 // ── Appointments ───────────────────────────────────────────
 
-message CreateAppointmentRequest {
-  string doctor_id = 1;
-  string patient_id = 2;
-  string clinic_id = 3;
-  string date = 4;
-  string time = 5;
-  string reason_for_visit = 6;
-}
-message CreateAppointmentResponse {
-  bool              success = 1;
-  AppointmentMessage appointment = 2;
-  string            message = 3;
-}
-
 message CancelAppointmentRequest {
   string appointment_id = 1;
   string patient_id = 2;
@@ -184,9 +174,6 @@ message CancelAppointmentResponse {bool success = 1; string message = 2;}
 message GetAppointmentsRequest  {string doctor_id = 1; string date = 2;}
 message GetAppointmentsResponse {repeated AppointmentMessage appointments = 1;}
 
-message GetMyAppointmentsRequest  {string patient_id = 1; string date = 2;}
-message GetMyAppointmentsResponse {repeated AppointmentMessage appointments = 1;}
-
 message AppointmentActionRequest {
   string            appointment_id = 1;
   string            doctor_id = 2;
@@ -194,5 +181,39 @@ message AppointmentActionRequest {
   string            date = 4;
   string            time = 5;
   AppointmentStatus status = 6;
+  string            meeting_link = 7;
 }
 message AppointmentActionResponse {bool success = 1; string message = 2;}
+
+// ── Reviews ───────────────────────────────────────────────
+
+message ReviewMessage {
+  string doctor_id = 1;
+  string patient_id = 2;
+  string patient_name = 3;
+  int32  rating = 4; // 1-5
+  string comment = 5;
+  string created_at = 6;
+}
+
+message AddReviewRequest {
+  string doctor_id = 1;
+  string patient_id = 2;
+  int32  rating = 3;
+  string comment = 4;
+}
+
+message AddReviewResponse {
+  bool   success = 1;
+  string message = 2;
+  double average_rating = 3;
+}
+
+message GetReviewsRequest {
+  string doctor_id = 1;
+}
+
+message GetReviewsResponse {
+  repeated ReviewMessage reviews = 1;
+  double average_rating = 2;
+}

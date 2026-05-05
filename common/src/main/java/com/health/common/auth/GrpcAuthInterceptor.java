@@ -28,17 +28,25 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
     private static final Metadata.Key<String> AUTHORIZATION_HEADER_CLINIC =
             Metadata.Key.of("Authorization_Clinic", Metadata.ASCII_STRING_MARSHALLER);
 
+    private static final Metadata.Key<String> AUTHORIZATION_HEADER_ADMIN =
+            Metadata.Key.of("Authorization_Admin", Metadata.ASCII_STRING_MARSHALLER);
+
     private static final Set<String> LOGIN_METHODS = Set.of(
             "GenerateToken",
             "GenerateClinicToken",
-            "PatientLogin"
+            "PatientLogin",
+            "AdminLogin"
     );
 
     private static final Set<String> PUBLIC_METHODS = Set.of(
             "CreateDoctor",
             "RegisterPatient",
             "CreateClinic",
-            "ForgotPassword"
+            "ForgotPassword",
+            "GetDoctorsByLocation",
+            "GetDoctorSchedule",
+            "GetDoctorReviews",
+            "GetDoctor"
     );
 
     private final JwtProvider jwtProvider;
@@ -59,15 +67,26 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
         String authHeaderDoctor = headers.get(AUTHORIZATION_HEADER_DOCTOR);
         String authHeaderPatient = headers.get(AUTHORIZATION_HEADER_PATIENT);
         String authHeaderClinic = headers.get(AUTHORIZATION_HEADER_CLINIC);
+        String authHeaderAdmin = headers.get(AUTHORIZATION_HEADER_ADMIN);
 
         if (isLoginMethod(methodName)) {
-            return handleBasicAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic);
+            return handleBasicAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic, authHeaderAdmin);
         }
+
+        String authHeader = authHeaderDoctor != null ? authHeaderDoctor :
+                           (authHeaderPatient != null ? authHeaderPatient : 
+                           (authHeaderClinic != null ? authHeaderClinic : authHeaderAdmin));
+
+        // If token is present, validate and populate context regardless of public/private
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return handleBearerAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic, authHeaderAdmin, methodName);
+        }
+
         if (isPublicMethod(methodName)) {
             return next.startCall(call, headers);
         }
 
-        return handleBearerAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic, methodName);
+        return handleBearerAuth(call, headers, next, authHeaderDoctor, authHeaderPatient, authHeaderClinic, authHeaderAdmin, methodName);
     }
 
     private <ReqT, RespT> ServerCall.Listener<ReqT> handleBasicAuth(
@@ -76,10 +95,12 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
             ServerCallHandler<ReqT, RespT> next,
             String authHeaderDoctor,
             String authHeaderPatient,
-            String authHeaderClinic) {
+            String authHeaderClinic,
+            String authHeaderAdmin) {
         
         String authHeader = authHeaderDoctor != null ? authHeaderDoctor :
-                           (authHeaderPatient != null ? authHeaderPatient : authHeaderClinic);
+                           (authHeaderPatient != null ? authHeaderPatient : 
+                           (authHeaderClinic != null ? authHeaderClinic : authHeaderAdmin));
 
         if (authHeader == null || !authHeader.startsWith("Basic ")) {
             log.debug("Missing or invalid Basic Authorization header");
@@ -114,10 +135,12 @@ public class GrpcAuthInterceptor implements ServerInterceptor {
             String authHeaderDoctor,
             String authHeaderPatient,
             String authHeaderClinic,
+            String authHeaderAdmin,
             String methodName) {
 
         String authHeader = authHeaderDoctor != null ? authHeaderDoctor :
-                           (authHeaderPatient != null ? authHeaderPatient : authHeaderClinic);
+                           (authHeaderPatient != null ? authHeaderPatient : 
+                           (authHeaderClinic != null ? authHeaderClinic : authHeaderAdmin));
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             log.debug("Missing Bearer token for method: {}", methodName);

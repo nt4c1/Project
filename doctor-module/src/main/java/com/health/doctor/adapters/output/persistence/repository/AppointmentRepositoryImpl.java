@@ -69,31 +69,31 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         this.insertById = session.prepare("INSERT INTO doctor_service.appointments_by_id " +
                 "(appointment_id, doctor_id, patient_id, clinic_id, appointment_date, " +
                 " scheduled_time, status, reason_for_visit, " +
-                " cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+                " cancellation_reason, meeting_link, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
 
         this.insertByDoctor = session.prepare("INSERT INTO doctor_service.appointments_by_doctor " +
                 "(doctor_id, appointment_date, scheduled_time, appointment_id, " +
                 " patient_id, clinic_id, patient_name, patient_phone, status, " +
-                " reason_for_visit, doctor_notes, cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                " reason_for_visit, doctor_notes, cancellation_reason, meeting_link, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
 
         this.insertByDoctorStatus = session.prepare("INSERT INTO doctor_service.appointments_by_doctor_status " +
                 "(doctor_id, status, appointment_date, scheduled_time, " +
-                " appointment_id, patient_id, clinic_id, patient_name, patient_phone, reason_for_visit) VALUES (?,?,?,?,?,?,?,?,?,?)");
+                " appointment_id, patient_id, clinic_id, patient_name, patient_phone, reason_for_visit, meeting_link) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
 
         this.insertByDoctorAll = session.prepare("INSERT INTO doctor_service.appointments_by_doctor_all " +
                 "(doctor_id, appointment_date, scheduled_time, appointment_id, " +
                 " patient_id, clinic_id, patient_name, patient_phone, status, " +
-                " reason_for_visit, doctor_notes, cancellation_reason, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                " reason_for_visit, doctor_notes, cancellation_reason, meeting_link, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
 
         this.insertByPatient = session.prepare("INSERT INTO doctor_service.appointments_by_patient " +
                 "(patient_id, appointment_date, scheduled_time, appointment_id, " +
                 " doctor_id, clinic_id, doctor_name, clinic_name, specialization, " +
-                " status, reason_for_visit, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+                " status, reason_for_visit, cancellation_reason, meeting_link) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
 
         this.insertByPatientAll = session.prepare("INSERT INTO doctor_service.appointments_by_patient_all " +
                 "(patient_id, appointment_date, scheduled_time, appointment_id, " +
                 " doctor_id, clinic_id, doctor_name, clinic_name, specialization, " +
-                " status, reason_for_visit, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+                " status, reason_for_visit, cancellation_reason, meeting_link) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
 
         this.updateCount = session.prepare("UPDATE doctor_service.appointment_count_by_doctor_date " +
                 "SET count = count + ? WHERE doctor_id=? AND appointment_date=?");
@@ -180,21 +180,21 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
         BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
                 .addStatement(insertById.bind(a.getId(), a.getDoctorId(), a.getPatientId(), a.getClinicId(),
                         a.getAppointmentDate(), scheduledInstant,
-                        a.getStatus().name(), a.getReasonForVisit(), null, now, now))
+                        a.getStatus().name(), a.getReasonForVisit(), null, a.getMeetingLink(), now, now))
                 .addStatement(insertByDoctor.bind(a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
-                        a.getStatus().name(), a.getReasonForVisit(), null, null, now, now))
+                        a.getStatus().name(), a.getReasonForVisit(), null, null, a.getMeetingLink(), now, now))
                 .addStatement(insertByDoctorAll.bind(a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
-                        a.getStatus().name(), a.getReasonForVisit(), null, null, now, now))
+                        a.getStatus().name(), a.getReasonForVisit(), null, null, a.getMeetingLink(), now, now))
                 .addStatement(insertByDoctorStatus.bind(a.getDoctorId(), a.getStatus().name(), a.getAppointmentDate(), scheduledInstant,
-                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit()))
+                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit(), a.getMeetingLink()))
                 .addStatement(insertByPatient.bind(a.getPatientId(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getDoctorId(), a.getClinicId(), a.getDoctorName(), a.getClinicName(),
-                        a.getSpecialization(), a.getStatus().name(), a.getReasonForVisit(), null))
+                        a.getSpecialization(), a.getStatus().name(), a.getReasonForVisit(), null, a.getMeetingLink()))
                 .addStatement(insertByPatientAll.bind(a.getPatientId(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getDoctorId(), a.getClinicId(), a.getDoctorName(), a.getClinicName(),
-                        a.getSpecialization(), a.getStatus().name(), a.getReasonForVisit(), null));
+                        a.getSpecialization(), a.getStatus().name(), a.getReasonForVisit(), null, a.getMeetingLink()));
 
         session.execute(batch.build());
         session.execute(updateCount.bind(1L, a.getDoctorId(), a.getAppointmentDate()));
@@ -296,6 +296,16 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
     }
 
     @Override
+    public List<Appointment> findByPatient(UUID patientId) {
+        ResultSet rs = session.execute(selectByPatientAll.bind(patientId));
+        List<Appointment> list = new ArrayList<>();
+        for (Row r : rs) {
+            list.add(mapPatientRow(r));
+        }
+        return list;
+    }
+
+    @Override
     public Optional<Appointment> findById(UUID id) {
         Row r = session.execute(selectById.bind(id)).one();
         return Optional.ofNullable(r).map(row -> {
@@ -341,10 +351,10 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 .addStatement(updateStatusByDoctor.bind(newStatus, now, a.getDoctorId(), a.getAppointmentDate(), scheduledInstant, a.getId()))
                 .addStatement(insertByDoctorAll.bind(a.getDoctorId(), a.getAppointmentDate(), scheduledInstant,
                         a.getId(), a.getPatientId(), clinicId, a.getPatientName(), a.getPatientPhone(),
-                        newStatus, a.getReasonForVisit(), null, null, a.getCreatedAt(), now))
+                        newStatus, a.getReasonForVisit(), null, null, a.getMeetingLink(), a.getCreatedAt(), now))
                 .addStatement(deleteByDoctorStatus.bind(a.getDoctorId(), a.getStatus().name(), a.getAppointmentDate(), scheduledInstant, a.getId()))
                 .addStatement(insertByDoctorStatus.bind(a.getDoctorId(), newStatus, a.getAppointmentDate(), scheduledInstant,
-                        a.getId(), a.getPatientId(), clinicId, a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit()))
+                        a.getId(), a.getPatientId(), clinicId, a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit(), a.getMeetingLink()))
                 .addStatement(updateStatusByPatient.bind(newStatus, a.getPatientId(), a.getAppointmentDate(), scheduledInstant, a.getId()))
                 .addStatement(updateStatusByPatientAll.bind(newStatus, a.getPatientId(), a.getAppointmentDate(), scheduledInstant, a.getId()));
 
@@ -424,19 +434,19 @@ public class AppointmentRepositoryImpl implements AppointmentRepositoryPort {
                 .addStatement(deleteByDoctorAll.bind(a.getDoctorId(), oldDate, oldInstant, a.getId()))
                 .addStatement(insertByDoctor.bind(a.getDoctorId(), a.getAppointmentDate(), newInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),    
-                        newStatus, a.getReasonForVisit(), null, null, a.getCreatedAt(), now))
+                        newStatus, a.getReasonForVisit(), null, null, a.getMeetingLink(), a.getCreatedAt(), now))
                 .addStatement(insertByDoctorAll.bind(a.getDoctorId(), a.getAppointmentDate(), newInstant,
                         a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(),
-                        newStatus, a.getReasonForVisit(), null, null, a.getCreatedAt(), now))
+                        newStatus, a.getReasonForVisit(), null, null, a.getMeetingLink(), a.getCreatedAt(), now))
                 .addStatement(deleteByDoctorStatus.bind(a.getDoctorId(), a.getStatus().name(), oldDate, oldInstant, a.getId()))
                 .addStatement(insertByDoctorStatus.bind(a.getDoctorId(), newStatus, a.getAppointmentDate(), newInstant,
-                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit()))
+                        a.getId(), a.getPatientId(), a.getClinicId(), a.getPatientName(), a.getPatientPhone(), a.getReasonForVisit(), a.getMeetingLink()))
                 .addStatement(deleteByPatient.bind(a.getPatientId(), oldDate, oldInstant, a.getId()))
                 .addStatement(insertByPatient.bind(a.getPatientId(), a.getAppointmentDate(), newInstant, a.getId(), a.getDoctorId(), a.getClinicId(),
-                        a.getDoctorName(), a.getClinicName(), a.getSpecialization(), newStatus, a.getReasonForVisit(), null))
+                        a.getDoctorName(), a.getClinicName(), a.getSpecialization(), newStatus, a.getReasonForVisit(), null, a.getMeetingLink()))
                 .addStatement(deleteByPatientAll.bind(a.getPatientId(), oldDate, oldInstant, a.getId()))
                 .addStatement(insertByPatientAll.bind(a.getPatientId(), a.getAppointmentDate(), newInstant, a.getId(), a.getDoctorId(), a.getClinicId(),
-                        a.getDoctorName(), a.getClinicName(), a.getSpecialization(), newStatus, a.getReasonForVisit(), null));
+                        a.getDoctorName(), a.getClinicName(), a.getSpecialization(), newStatus, a.getReasonForVisit(), null, a.getMeetingLink()));
 
         session.execute(batch.build());
         session.execute(updateCount.bind(-1L, a.getDoctorId(), oldDate));

@@ -29,7 +29,7 @@ public interface DoctorInterface {
 
     List<Doctor> getDoctorsByClinic(@NotNull UUID clinicId);
 
-    List<Doctor> getDoctorsByLocation(@NotBlank String location);
+    List<Doctor> getDoctorsByLocation(@NotBlank String location, com.health.grpc.common.AvailabilityFilter filter);
 
     void updateDoctorLocation(@NotNull UUID doctorId,UUID clinicId, @NotBlank String locationText);
 
@@ -52,4 +52,9 @@ public interface DoctorInterface {
 
     com.health.grpc.doctor.DoctorActiveResponse isDoctorActive(@NotNull java.util.UUID doctorId, java.util.UUID clinicId);
 
+    void addReview(@NotNull UUID doctorId, @NotNull UUID patientId, int rating, String comment);
+
+    List<com.health.doctor.domain.model.Review> getDoctorReviews(@NotNull UUID doctorId);
+
+    double getAverageRating(@NotNull UUID doctorId);
 }

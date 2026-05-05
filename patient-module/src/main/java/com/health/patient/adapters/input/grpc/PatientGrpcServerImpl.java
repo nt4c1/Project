@@ -187,12 +187,12 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
 
     @Override
     public void getDoctorsByLocation(com.health.grpc.common.LocationSearchRequest request,
-                                     StreamObserver<NearbyDoctorsProxyResponse> observer) {
+                                     StreamObserver<NearbyDoctorsResponse> observer) {
         handle(observer, () -> {
             if (request.getLocation().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
-            ensurePatient();
-            return NearbyDoctorsProxyResponse.newBuilder()
-                    .addAllDoctors(doctorModule.getDoctorsByLocation(request.getLocation())
+//            ensurePatient();
+            return NearbyDoctorsResponse.newBuilder()
+                    .addAllDoctors(doctorModule.getDoctorsByLocation(request.getLocation(),request.getFilter())
                             .stream().map(MapperClass::toMsg).collect(Collectors.toList()))
                     .build();
         });
@@ -203,7 +203,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                                   StreamObserver<ScheduleProxyResponse> observer) {
         handle(observer, () -> {
             if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
-            ensurePatient();
+            
 
             UUID doctorId = UUID.fromString(request.getDoctorId());
             UUID clinicId = NIL_UUID;

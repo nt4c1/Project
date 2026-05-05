@@ -29,6 +29,10 @@ public interface RedisUtil {
 
     Long increment(String key, long ttlSeconds);
 
+    void lpush(String key, String value, int limit);
+
+    java.util.List<String> lrange(String key, int start, int end);
+
     String tryLock(String key, long ttlMillis);
 
     boolean releaseLock(String key, String token);

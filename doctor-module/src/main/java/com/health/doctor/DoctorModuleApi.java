@@ -10,18 +10,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * The public API surface of the doctor module.
- *
- * Why a dedicated interface instead of importing use cases directly?
- *   Direct use-case imports couple patient to doctor internals. If you rename
- *   AppointmentUseCaseImpl or split it, patient code breaks. This interface
- *   is a stable contract — doctor internals can change freely behind it.
- */
 public interface DoctorModuleApi {
 
     // ── Doctor discovery ──────────────────────────────────────────────────────
-    List<Doctor> getDoctorsByLocation(String location);
+    List<Doctor> getDoctorsByLocation(String location, com.health.grpc.common.AvailabilityFilter filter);
     Optional<DoctorSchedule> getDoctorSchedule(UUID doctorId, UUID clinicId);
 
     // ── Appointments (patient-initiated actions) ──────────────────────────────

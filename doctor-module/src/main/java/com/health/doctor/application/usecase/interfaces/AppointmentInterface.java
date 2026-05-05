@@ -11,15 +11,14 @@ import java.util.List;
 import java.util.UUID;
 
 public interface AppointmentInterface {
+UUID createAppointment(@NotNull UUID doctorId,
+                       @NotNull UUID patientId,
+                       @NotNull UUID clinicId,
+                       @NotNull @FutureOrPresent LocalDate date,
+                       @NotNull LocalTime time,
+                       @NotBlank String reasonForVisit);
 
-    UUID createAppointment(@NotNull UUID doctorId,
-                           @NotNull UUID patientId,
-                           @NotNull UUID clinicId,
-                           @NotNull @FutureOrPresent LocalDate date,
-                           @NotNull LocalTime time,
-                           @NotBlank String reasonForVisit);
-
-    void acceptAppointment(@NotNull Appointment appointment);
+void acceptAppointment(@NotNull Appointment appointment, String meetingLink);
 
     void cancelAppointment(@NotNull UUID appointmentId,
                            @NotNull UUID patientId,
@@ -29,6 +28,10 @@ public interface AppointmentInterface {
                            @NotBlank String cancellationReason);
 
     void postponeAppointment(@NotNull Appointment appointment);
+
+    void completeAppointment(@NotNull Appointment appointment);
+
+    void noShowAppointment(@NotNull Appointment appointment);
 
     List<Appointment> getAppointment(@NotNull UUID doctorId, @NotNull LocalDate date);
 

@@ -39,8 +39,8 @@ public class DoctorModuleApiImpl implements DoctorModuleApi {
     }
 
     @Override
-    public List<Doctor> getDoctorsByLocation(String location) {
-        return doctorUseCase.getDoctorsByLocation(location);
+    public List<Doctor> getDoctorsByLocation(String location, com.health.grpc.common.AvailabilityFilter filter) {
+        return doctorUseCase.getDoctorsByLocation(location, filter);
     }
 
     @Override

@@ -1,13 +1,11 @@
 package com.health.doctor.adapters.output.nats;
 
-import com.health.grpc.notification.AppointmentAcceptedEvent;
-import com.health.grpc.notification.AppointmentBookedEvent;
-import com.health.grpc.notification.AppointmentCancelledEvent;
-import com.health.grpc.notification.AppointmentPostponedEvent;
 import io.micronaut.nats.annotation.NatsClient;
 import io.micronaut.nats.annotation.Subject;
+import io.micronaut.serde.annotation.Serdeable;
 
 @NatsClient
+@Serdeable.Serializable
 public interface DoctorNatsClient {
 
     @Subject("doctor.created")
@@ -20,14 +18,20 @@ public interface DoctorNatsClient {
     void sendDoctorDeleted(String doctorId);
 
     @Subject("appointment.created")
-    void sendAppointmentCreated(AppointmentBookedEvent event);
+    void sendAppointmentCreated(byte[] payload);
 
     @Subject("appointment.accepted")
-    void sendAppointmentAccepted(AppointmentAcceptedEvent event);
+    void sendAppointmentAccepted(byte[] payload);
 
     @Subject("appointment.postponed")
-    void sendAppointmentPostponed(AppointmentPostponedEvent event);
+    void sendAppointmentPostponed(byte[] payload);
 
     @Subject("appointment.cancelled")
-    void sendAppointmentCancelled(AppointmentCancelledEvent event);
+    void sendAppointmentCancelled(byte[] payload);
+
+    @Subject("appointment.completed")
+    void sendAppointmentCompleted(byte[] payload);
+
+    @Subject("appointment.no-show")
+    void sendAppointmentNoShow(byte[] payload);
 }

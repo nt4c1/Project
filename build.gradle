@@ -31,6 +31,12 @@ dependencies {
     implementation project(':common')
     implementation project(':doctor-module')
     implementation project(':patient-module')
+    implementation project(':notification-module')
+    implementation project(':admin-module')
+
+    // Serde
+    annotationProcessor "io.micronaut.serde:micronaut-serde-processor"
+    implementation "io.micronaut.serde:micronaut-serde-jackson"
 
     // gRPC Server Runtime
     implementation "io.micronaut.grpc:micronaut-grpc-server-runtime:4.12.0"

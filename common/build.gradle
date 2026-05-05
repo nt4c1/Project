@@ -10,6 +10,7 @@ dependencies {
     api "io.grpc:grpc-stub:${rootProject.ext.grpcVersion}"
     api "io.grpc:grpc-protobuf:${rootProject.ext.grpcVersion}"
     api "com.google.protobuf:protobuf-java:3.25.8"
+    api "com.google.protobuf:protobuf-java-util:3.25.8"
 
     // Auth dependencies moved to common
     api "org.mindrot:jbcrypt:${rootProject.ext.jbcryptVersion}"
@@ -23,11 +24,14 @@ dependencies {
     implementation "io.micronaut:micronaut-inject"
 
     //Mapper
-    implementation("com.fasterxml.jackson.core:jackson-databind")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
+    api("com.fasterxml.jackson.core:jackson-databind")
+    api("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
     // Redis
     api "io.lettuce:lettuce-core"
+
+    // NATS
+    api "io.micronaut.nats:micronaut-nats"
 
     testAnnotationProcessor "io.micronaut:micronaut-inject-java"
     testImplementation "io.micronaut.test:micronaut-test-junit5"

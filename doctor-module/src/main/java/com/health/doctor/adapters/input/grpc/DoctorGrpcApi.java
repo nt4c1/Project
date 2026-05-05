@@ -52,6 +52,19 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             throw new SecurityException("Access denied: Doctors only.");
     }
 
+    private void ensurePatient() {
+        String role = ROLE_KEY.get();
+        if (role == null || !role.equalsIgnoreCase("Patient"))
+            throw new SecurityException("Access denied: Patients only.");
+    }
+
+    private void ensureSelfPatient(String requestedId) {
+        ensurePatient();
+        String authId = USER_ID_KEY.get();
+        if (authId == null || !authId.equals(requestedId))
+            throw new SecurityException("Access denied: you can only leave reviews for yourself.");
+    }
+
     private void ensureSelf(String requestedId) {
         ensureDoctor();
         String authId = USER_ID_KEY.get();
@@ -358,6 +371,64 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
         });
     }
 
+    // ── Reviews ──────────────────────────────────────────────────────────────
+
+    @Override
+    public void addReview(AddReviewRequest request,
+                          StreamObserver<AddReviewResponse> observer) {
+        handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
+
+            ensureSelfPatient(request.getPatientId());
+
+            doctorUseCase.addReview(
+                    UUID.fromString(request.getDoctorId()),
+                    UUID.fromString(request.getPatientId()),
+                    request.getRating(),
+                    request.getComment()
+            );
+
+            double avg = doctorUseCase.getAverageRating(UUID.fromString(request.getDoctorId()));
+
+            observer.onNext(AddReviewResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Review added successfully")
+                    .setAverageRating(avg)
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void getDoctorReviews(GetReviewsRequest request,
+                                 StreamObserver<GetReviewsResponse> observer) {
+        handle(observer, () -> {
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+
+            UUID doctorId = UUID.fromString(request.getDoctorId());
+            List<Review> reviews = doctorUseCase.getDoctorReviews(doctorId);
+            double avg = doctorUseCase.getAverageRating(doctorId);
+
+            List<ReviewMessage> msgs = reviews.stream()
+                    .map(r -> ReviewMessage.newBuilder()
+                            .setDoctorId(r.getDoctorId().toString())
+                            .setPatientId(r.getPatientId().toString())
+                            .setPatientName(r.getPatientName())
+                            .setRating(r.getRating())
+                            .setComment(r.getComment())
+                            .setCreatedAt(r.getCreatedAt().toString())
+                            .build())
+                    .toList();
+
+            observer.onNext(GetReviewsResponse.newBuilder()
+                    .addAllReviews(msgs)
+                    .setAverageRating(avg)
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
     // ── Location ──────────────────────────────────────────────────────────────
 
     @Override
@@ -365,7 +436,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
                                      StreamObserver<NearbyDoctorsResponse> observer) {
         handle(observer, () -> {
             if (request.getLocation().isBlank()) throw new DomainException("Location is required", Status.INVALID_ARGUMENT);
-            List<Doctor> doctors = doctorUseCase.getDoctorsByLocation(request.getLocation());
+            List<Doctor> doctors = doctorUseCase.getDoctorsByLocation(request.getLocation(), request.getFilter());
             List<DoctorMessage> doctorsMsg = doctors.stream().map(MapperClass::toMsg).toList();
             observer.onNext(NearbyDoctorsResponse.newBuilder()
                     .addAllDoctors(doctorsMsg)
@@ -375,46 +446,6 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     }
 
     // ── Appointments ──────────────────────────────────────────────────────────
-
-    @Override
-    public void createAppointment(CreateAppointmentRequest request,
-                                  StreamObserver<CreateAppointmentResponse> observer) {
-        handle(observer, () -> {
-            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
-            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
-            if (request.getDate().isBlank()) throw new DomainException("Date is required", Status.INVALID_ARGUMENT);
-            if (request.getTime().isBlank()) throw new DomainException("Time is required", Status.INVALID_ARGUMENT);
-
-            UUID doctorId = UUID.fromString(request.getDoctorId());
-            UUID clinicId = NIL_UUID;
-            if (!request.getClinicId().isBlank()) {
-                clinicId = UUID.fromString(request.getClinicId());
-            } else {
-                Doctor doc = doctorRepo.findById(doctorId)
-                        .orElseThrow(() -> new DomainException("Doctor not found", Status.NOT_FOUND));
-                if (doc.getClinicIds() != null && !doc.getClinicIds().isEmpty()) {
-                    throw new DomainException("Clinic ID is required for clinic-affiliated doctors", Status.INVALID_ARGUMENT);
-                }
-            }
-
-            UUID id = appointmentsUseCase.createAppointment(
-                    doctorId,
-                    UUID.fromString(request.getPatientId()),
-                    clinicId,
-                    LocalDate.parse(request.getDate()),
-                    LocalTime.parse(request.getTime()),
-                    request.getReasonForVisit()
-            );
-            Appointment appt = appointmentRepo.findById(id)
-                    .orElseThrow(() -> new DomainException("Appointment creation failed", Status.INTERNAL));
-            observer.onNext(CreateAppointmentResponse.newBuilder()
-                    .setSuccess(true)
-                    .setAppointment(MapperClass.toApptMsg(appt))
-                    .setMessage("Appointment created successfully")
-                    .build());
-            observer.onCompleted();
-        });
-    }
 
     @Override
     public void cancelAppointment(CancelAppointmentRequest request,
@@ -476,24 +507,6 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
     }
 
     @Override
-    public void getMyAppointments(GetMyAppointmentsRequest request,
-                                  StreamObserver<GetMyAppointmentsResponse> observer) {
-        handle(observer, () -> {
-            if (request.getPatientId().isBlank()) throw new DomainException("Patient ID is required", Status.INVALID_ARGUMENT);
-            if (request.getDate().isBlank()) throw new DomainException("Date is required", Status.INVALID_ARGUMENT);
-
-            List<Appointment> list = appointmentRepo.findByPatientAndDate(
-                    UUID.fromString(request.getPatientId()),
-                    LocalDate.parse(request.getDate())
-            );
-            observer.onNext(GetMyAppointmentsResponse.newBuilder()
-                    .addAllAppointments(list.stream().map(MapperClass::toApptMsg).collect(Collectors.toList()))
-                    .build());
-            observer.onCompleted();
-        });
-    }
-
-    @Override
     public void acceptAppointment(AppointmentActionRequest request,
                                   StreamObserver<AppointmentActionResponse> observer) {
         handle(observer, () -> {
@@ -506,7 +519,7 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
 
             ensureSelf(current.getDoctorId().toString());
 
-            appointmentsUseCase.acceptAppointment(current);
+            appointmentsUseCase.acceptAppointment(current, request.getMeetingLink());
             observer.onNext(AppointmentActionResponse.newBuilder()
                     .setSuccess(true).setMessage("Accepted").build());
             observer.onCompleted();
@@ -529,6 +542,44 @@ public class DoctorGrpcApi extends DoctorGrpcServiceGrpc.DoctorGrpcServiceImplBa
             appointmentsUseCase.postponeAppointment(current);
             observer.onNext(AppointmentActionResponse.newBuilder()
                     .setSuccess(true).setMessage("Postponed").build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void completeAppointment(AppointmentActionRequest request,
+                                    StreamObserver<AppointmentActionResponse> observer) {
+        handle(observer, () -> {
+            if (request.getAppointmentId().isBlank()) throw new DomainException("Appointment ID is required", Status.INVALID_ARGUMENT);
+
+            Appointment current = appointmentRepo.findById(
+                            UUID.fromString(request.getAppointmentId()))
+                    .orElseThrow(() -> new DomainException("Appointment not found", Status.NOT_FOUND));
+
+            ensureSelf(current.getDoctorId().toString());
+
+            appointmentsUseCase.completeAppointment(current);
+            observer.onNext(AppointmentActionResponse.newBuilder()
+                    .setSuccess(true).setMessage("Completed").build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void noShowAppointment(AppointmentActionRequest request,
+                                  StreamObserver<AppointmentActionResponse> observer) {
+        handle(observer, () -> {
+            if (request.getAppointmentId().isBlank()) throw new DomainException("Appointment ID is required", Status.INVALID_ARGUMENT);
+
+            Appointment current = appointmentRepo.findById(
+                            UUID.fromString(request.getAppointmentId()))
+                    .orElseThrow(() -> new DomainException("Appointment not found", Status.NOT_FOUND));
+
+            ensureSelf(current.getDoctorId().toString());
+
+            appointmentsUseCase.noShowAppointment(current);
+            observer.onNext(AppointmentActionResponse.newBuilder()
+                    .setSuccess(true).setMessage("No-Show").build());
             observer.onCompleted();
         });
     }

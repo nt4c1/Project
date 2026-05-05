@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+import "auth.proto";
+import "common.proto";
+
+option java_package = "com.health.grpc.admin";
+option java_outer_classname = "AdminProto";
+option java_multiple_files = true;
+
+service AdminGrpcService {
+  // Auth
+  rpc AdminLogin (TokenRequest) returns (TokenResponse);
+  rpc ValidateAdminToken (ValidateTokenRequest) returns (ValidateTokenResponse);
+
+  rpc GetSystemStats (GetStatsRequest) returns (GetStatsResponse);
+  rpc GetRecentEvents (GetEventsRequest) returns (GetEventsResponse);
+}
+
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  int64 total_doctors = 1;
+  int64 total_patients = 2;
+  int64 total_appointments = 3;
+  double registration_rate_per_day = 4;
+  double appointment_volume_per_day = 5;
+}
+
+message GetEventsRequest {
+  int32 limit = 1;
+}
+
+message EventMessage {
+  string timestamp = 1;
+  string event_type = 2;
+  string details = 3;
+}
+
+message GetEventsResponse {
+  repeated EventMessage events = 1;
+}

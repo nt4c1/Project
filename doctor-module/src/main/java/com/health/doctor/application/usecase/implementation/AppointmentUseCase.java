@@ -13,7 +13,10 @@ import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.notification.AppointmentAcceptedEvent;
 import com.health.grpc.notification.AppointmentBookedEvent;
 import com.health.grpc.notification.AppointmentCancelledEvent;
+import com.health.grpc.notification.AppointmentCompletedEvent;
+import com.health.grpc.notification.AppointmentNoShowEvent;
 import com.health.grpc.notification.AppointmentPostponedEvent;
+import io.micronaut.serde.annotation.Serdeable;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
@@ -30,6 +33,7 @@ import java.util.UUID;
 @Slf4j
 @Singleton
 @Validated
+@Serdeable.Serializable
 public class AppointmentUseCase implements AppointmentInterface {
 
     private static final ZoneId NPT = ZoneId.of("Asia/Kathmandu");
@@ -103,23 +107,25 @@ public class AppointmentUseCase implements AppointmentInterface {
         
         natsClient.sendAppointmentCreated(AppointmentBookedEvent.newBuilder()
                 .setAppointment(MapperClass.toApptMsg(appointment))
-                .build());
+                .build().toByteArray());
         
         return appointmentId;
     }
 
     @Override
-    public void acceptAppointment(@NotNull Appointment appointment) {
+    public void acceptAppointment(@NotNull Appointment appointment, String meetingLink) {
         if (appointment.getStatus() != AppointmentStatus.APPOINTMENT_STATUS_PENDING)
             throw new InvalidArgumentException(
                     "Only Pending Appointments can be accepted, Current status: " + appointment.getStatus()
             );
+        
+        appointment.setMeetingLink(meetingLink);
         repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED.name());
         appointment.setStatus(AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED);
         
         natsClient.sendAppointmentAccepted(AppointmentAcceptedEvent.newBuilder()
                 .setAppointment(MapperClass.toApptMsg(appointment))
-                .build());
+                .build().toByteArray());
     }
 
     @Override
@@ -139,7 +145,7 @@ public class AppointmentUseCase implements AppointmentInterface {
         natsClient.sendAppointmentCancelled(AppointmentCancelledEvent.newBuilder()
                 .setAppointment(MapperClass.toApptMsg(a))
                 .setCancelledBy("UNKNOWN") // Could be enriched if we had more context
-                .build());
+                .build().toByteArray());
     }
 
     @Override
@@ -169,7 +175,47 @@ public class AppointmentUseCase implements AppointmentInterface {
         natsClient.sendAppointmentPostponed(AppointmentPostponedEvent.newBuilder()
                 .setAppointment(MapperClass.toApptMsg(postponed))
                 .setOldDate(oldDate.toString())
-                .build());
+                .build().toByteArray());
+    }
+
+    @Override
+    public void completeAppointment(@NotNull Appointment appointment) {
+        validateStatusUpdate(appointment);
+        repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_COMPLETED.name());
+        appointment.setStatus(AppointmentStatus.APPOINTMENT_STATUS_COMPLETED);
+
+        natsClient.sendAppointmentCompleted(AppointmentCompletedEvent.newBuilder()
+                .setAppointment(MapperClass.toApptMsg(appointment))
+                .build().toByteArray());
+    }
+
+    @Override
+    public void noShowAppointment(@NotNull Appointment appointment) {
+        validateStatusUpdate(appointment);
+        repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_NO_SHOW.name());
+        appointment.setStatus(AppointmentStatus.APPOINTMENT_STATUS_NO_SHOW);
+
+        natsClient.sendAppointmentNoShow(AppointmentNoShowEvent.newBuilder()
+                .setAppointment(MapperClass.toApptMsg(appointment))
+                .build().toByteArray());
+    }
+
+    private void validateStatusUpdate(Appointment appointment) {
+        ZonedDateTime nowNpt = ZonedDateTime.now(NPT);
+        LocalDate today = nowNpt.toLocalDate();
+        LocalTime nowTime = nowNpt.toLocalTime();
+
+        if (!appointment.getAppointmentDate().equals(today)) {
+            throw new InvalidArgumentException("This action can only be performed on the date of the appointment.");
+        }
+        if (nowTime.isBefore(appointment.getScheduleTime())) {
+            throw new InvalidArgumentException("This action can only be performed after the appointment time.");
+        }
+
+        if (appointment.getStatus() != AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED && 
+            appointment.getStatus() != AppointmentStatus.APPOINTMENT_STATUS_POSTPONED) {
+            throw new InvalidArgumentException("Only Accepted or Postponed appointments can be marked as Completed or No-Show. Current status: " + appointment.getStatus());
+        }
     }
 
     private LocalDate nextWorkingDay(LocalDate from, DoctorSchedule schedule) {

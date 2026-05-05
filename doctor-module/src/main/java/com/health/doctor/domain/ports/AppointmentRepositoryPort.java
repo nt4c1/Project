@@ -24,6 +24,8 @@ public interface AppointmentRepositoryPort {
 
     List<Appointment> findByPatientAndDate(UUID patientId, LocalDate date);
 
+    List<Appointment> findByPatient(UUID patientId);
+
     void updateStatus(Appointment appointment, String newStatus);
 
     void cancel(UUID appointmentId, UUID patientId, UUID doctorId,

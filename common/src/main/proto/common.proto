@@ -30,6 +30,7 @@ message DoctorMessage {
   double distance                   = 7;
   string         phone              = 8;
   string         next_possible_date = 10;
+  double         average_rating     = 11;
 }
 
 message ClinicMessage {
@@ -38,8 +39,15 @@ message ClinicMessage {
   string location_text = 3;
 }
 
+enum AvailabilityFilter {
+  AVAILABILITY_FILTER_UNSPECIFIED = 0;
+  AVAILABILITY_FILTER_NOW = 1;
+  AVAILABILITY_FILTER_THIS_WEEKEND = 2;
+}
+
 message LocationSearchRequest {
   string location = 1;
+  AvailabilityFilter filter = 2;
 }
 
 message AppointmentMessage {
@@ -56,4 +64,5 @@ message AppointmentMessage {
   string            reason_for_visit    = 11;
   string            cancellation_reason = 12;
   string            clinic_id           = 13;
+  string            meeting_link        = 14;
 }

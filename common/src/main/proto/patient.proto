@@ -23,11 +23,11 @@ service PatientGrpcService {
   rpc UpdatePatient        (UpdatePatientRequest)       returns (UpdatePatientResponse);
   rpc DeletePatient        (DeletePatientRequest)       returns (DeletePatientResponse);
 
-  // Doctor discovery proxy
-  rpc GetDoctorsByLocation (LocationSearchRequest)      returns (NearbyDoctorsProxyResponse);
+  // Doctor discovery
+  rpc GetDoctorsByLocation (LocationSearchRequest)      returns (NearbyDoctorsResponse);
   rpc GetDoctorSchedule    (ScheduleProxyRequest)       returns (ScheduleProxyResponse);
 
-  // Appointments proxy
+  // Appointments
   rpc BookAppointment      (BookAppointmentRequest)     returns (BookAppointmentResponse);
   rpc CancelAppointment    (CancelAppointmentRequest)   returns (CancelAppointmentResponse);
   rpc GetMyAppointments    (MyAppointmentsRequest)      returns (MyAppointmentsResponse);
@@ -77,9 +77,7 @@ message DeletePatientResponse{
   string message = 1;
 }
 
-// ── Doctor Discovery Proxy ─────────────────────────────────
-
-message NearbyDoctorsProxyResponse { repeated DoctorMessage doctors = 1; }
+// ── Doctor Discovery ───────────────────────────────────────
 
 message ScheduleProxyRequest  { string doctor_id = 1; string clinic_id = 2; }
 message ScheduleProxyResponse {

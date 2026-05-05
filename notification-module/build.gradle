@@ -1,0 +1,25 @@
+plugins {
+    id 'io.micronaut.library'
+    id 'java'
+}
+
+dependencies {
+    api platform("io.micronaut.platform:micronaut-parent:${rootProject.ext.micronautVersion}")
+    api project(':common')
+
+    // NATS
+    implementation "io.micronaut.nats:micronaut-nats"
+
+    // Micronaut core
+    annotationProcessor "io.micronaut:micronaut-inject-java"
+    implementation "io.micronaut:micronaut-inject"
+    implementation "io.micronaut.validation:micronaut-validation"
+    
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+}
+
+micronaut {
+    version "${rootProject.ext.micronautVersion}"
+}

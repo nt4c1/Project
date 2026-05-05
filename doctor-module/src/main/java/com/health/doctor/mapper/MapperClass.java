@@ -25,7 +25,8 @@ public class MapperClass {
                 .setName(d.getName() != null ? d.getName() : "")
                 .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
                 .setIsActive(d.isActive())
-                .setDistance(d.getDistance());
+                .setDistance(d.getDistance())
+                .setAverageRating(d.getAverageRating());
 
         if (d.getPhone() != null) b.setPhone(d.getPhone());
         if (d.getNextPossibleDate() != null) b.setNextPossibleDate(d.getNextPossibleDate());
@@ -54,6 +55,7 @@ public class MapperClass {
         if (a.getReasonForVisit()     != null) b.setReasonForVisit(a.getReasonForVisit());
         if (a.getCancellationReason() != null) b.setCancellationReason(a.getCancellationReason());
         if (a.getClinicId()           != null) b.setClinicId(a.getClinicId().toString());
+        if (a.getMeetingLink()        != null) b.setMeetingLink(a.getMeetingLink());
         return b.build();
     }
 
@@ -73,10 +75,12 @@ public class MapperClass {
         a.setPatientPhone(r.getString("patient_phone"));
         a.setReasonForVisit(r.getString("reason_for_visit"));
         a.setClinicId(r.getUuid("clinic_id"));
+        a.setMeetingLink(r.getString("meeting_link"));
         return a;
     }
 
     public static Clinic mapRowToClinic(Row r) {
+        // ... (rest same)
         if (r == null) return null;
         return new Clinic(
                 r.getUuid("clinic_id"),
@@ -130,6 +134,7 @@ public class MapperClass {
         a.setReasonForVisit(r.getString("reason_for_visit"));
         a.setCancellationReason(r.getString("cancellation_reason"));
         a.setClinicId(r.getUuid("clinic_id"));
+        a.setMeetingLink(r.getString("meeting_link"));
         return a;
     }
 

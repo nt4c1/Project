@@ -25,7 +25,6 @@ public class AuthInterceptor implements ServerInterceptor {
 
         String methodName = call.getMethodDescriptor().getFullMethodName();
 
-        // If it's not a patient service call, let it pass to the next interceptor
         if (!methodName.startsWith("com.health.grpc.patient.PatientGrpcService/")) {
             return next.startCall(call, headers);
         }
