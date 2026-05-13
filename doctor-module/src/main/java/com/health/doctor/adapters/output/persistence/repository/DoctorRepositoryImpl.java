@@ -24,8 +24,6 @@ import static com.datastax.oss.driver.api.querybuilder.QueryBuilder.*;
 @Singleton
 public class DoctorRepositoryImpl implements DoctorRepositoryPort {
 
-    public static final UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
-
     private static final String CACHE_DOCTOR_PREFIX   = "doctor:";
     private static final String CACHE_LOCATION_PREFIX = "doctor-location:";
     private static final long   TTL_DOCTOR            = 3600; // 1h
@@ -57,15 +55,14 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     private final PreparedStatement selectAppointmentsByDoctor;
     private final PreparedStatement selectGeoPrefix;
     private final PreparedStatement softDeleteDoctor;
-    private final PreparedStatement softDeleteDoctorClinic;
-    private final PreparedStatement softDeleteDoctorIndividual;
-    private final PreparedStatement softDeleteDoctorLocation;
+    private final PreparedStatement deleteDoctorClinic;
+    private final PreparedStatement deleteDoctorLocation;
+    private final PreparedStatement updateDoctorType;
+    private final PreparedStatement updateDoctorClinicType;
     private final PreparedStatement selectGeoPrefixByDoctor;
     private final PreparedStatement selectGeoPrefixByDoctorAndClinic;
     private final PreparedStatement selectDoctorByIdWithDeleted;
     private final PreparedStatement reactivateDoctor;
-    private final PreparedStatement reactivateDoctorIndividual;
-    private final PreparedStatement reactivateDoctorClinic;
 
     public DoctorRepositoryImpl(CqlSession session,
                                 RedisUtil redisUtil,
@@ -163,32 +160,6 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setColumn("is_active",      bindMarker("is_active"))
                         .setColumn("is_deleted",     literal(false))
                         .setColumn("updated_at",     bindMarker("updated_at"))
-                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
-                        .build()
-        );
-
-        reactivateDoctorIndividual = session.prepare(
-                update("doctor_service", "doctors_by_individual")
-                        .setColumn("name",           bindMarker("name"))
-                        .setColumn("type",           bindMarker("type"))
-                        .setColumn("specialization", bindMarker("specialization"))
-                        .setColumn("phone",          bindMarker("phone"))
-                        .setColumn("is_active",      bindMarker("is_active"))
-                        .setColumn("updated_at",     bindMarker("updated_at"))
-                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
-                        .build()
-        );
-
-        reactivateDoctorClinic = session.prepare(
-                update("doctor_service", "doctors_by_clinic")
-                        .setColumn("name",           bindMarker("name"))
-                        .setColumn("type",           bindMarker("type"))
-                        .setColumn("specialization", bindMarker("specialization"))
-                        .setColumn("phone",          bindMarker("phone"))
-                        .setColumn("is_active",      bindMarker("is_active"))
-                        .setColumn("is_deleted",     literal(false))
-                        .setColumn("updated_at",     bindMarker("updated_at"))
-                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
@@ -295,27 +266,33 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .build()
         );
 
-        softDeleteDoctorClinic = session.prepare(
-                update("doctor_service", "doctors_by_clinic")
-                        .setColumn("is_deleted", literal(true))
-                        .setColumn("updated_at", bindMarker("updated_at"))
+        deleteDoctorClinic = session.prepare(
+                deleteFrom("doctor_service", "doctors_by_clinic")
                         .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
-        softDeleteDoctorIndividual = session.prepare(
-                update("doctor_service", "doctors_by_individual")
-                        .setColumn("is_deleted", literal(true))
+        deleteDoctorLocation = session.prepare(
+                deleteFrom("doctor_service", "doctors_by_location")
+                        .whereColumn("geohash_prefix").isEqualTo(bindMarker("geohash_prefix"))
+                        .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
+                        .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
+                        .build()
+        );
+
+        updateDoctorType = session.prepare(
+                update("doctor_service", "doctors")
+                        .setColumn("type", bindMarker("type"))
                         .setColumn("updated_at", bindMarker("updated_at"))
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
         );
 
-        softDeleteDoctorLocation = session.prepare(
-                update("doctor_service", "doctors_by_location")
-                        .setColumn("is_deleted", literal(true))
-                        .whereColumn("geohash_prefix").isEqualTo(bindMarker("geohash_prefix"))
+        updateDoctorClinicType = session.prepare(
+                update("doctor_service", "doctors_by_clinic")
+                        .setColumn("type", bindMarker("type"))
+                        .setColumn("updated_at", bindMarker("updated_at"))
                         .whereColumn("clinic_id").isEqualTo(bindMarker("clinic_id"))
                         .whereColumn("doctor_id").isEqualTo(bindMarker("doctor_id"))
                         .build()
@@ -346,6 +323,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     @Override
     public void save(Doctor d) {
         Instant now      = Instant.now();
+        Instant createdAt = d.getCreatedAt() != null ? d.getCreatedAt() : now;
         String  cacheKey = CACHE_DOCTOR_PREFIX + d.getId();
         redisUtil.deleteAsync(cacheKey);
 
@@ -359,10 +337,12 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setString("phone",          d.getPhone())
                         .setBoolean("is_active",     d.isActive())
                         .setBoolean("is_deleted",    false)
-                        .setInstant("created_at",    now)
+                        .setInstant("created_at",    createdAt)
                         .setInstant("updated_at",    now));
 
-        if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
+        // Differentiate: Always keep in doctors_by_individual if type is INDIVIDUAL, 
+        // regardless of clinic association.
+        if (d.getType() == DoctorType.DOCTOR_TYPE_INDIVIDUAL) {
             batch.addStatement(insertDoctorByIndividual.bind()
                     .setUuid("doctor_id",      d.getId())
                     .setString("name",           d.getName())
@@ -372,7 +352,9 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                     .setBoolean("is_active",     d.isActive())
                     .setBoolean("is_deleted",    false)
                     .setInstant("updated_at",    now));
-        } else {
+        }
+
+        if (d.getClinicIds() != null && !d.getClinicIds().isEmpty()) {
             for (UUID clinicId : d.getClinicIds()) {
                 batch.addStatement(insertDoctorByClinic.bind()
                         .setUuid("clinic_id",      clinicId)
@@ -415,7 +397,7 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         BatchStatementBuilder deleteBatch = BatchStatement.builder(DefaultBatchType.LOGGED);
         boolean hasOld = false;
         for (Row row : rs) {
-            deleteBatch.addStatement(softDeleteDoctorLocation.bind()
+            deleteBatch.addStatement(deleteDoctorLocation.bind()
                     .setString("geohash_prefix", row.getString("geohash_prefix"))
                     .setUuid("clinic_id", effectiveClinicId)
                     .setUuid("doctor_id", doctorId));
@@ -624,20 +606,18 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setUuid("doctor_id",     doctorId));
 
         if (clinicIds == null || clinicIds.isEmpty()) {
-            batch.addStatement(softDeleteDoctorIndividual.bind()
-                    .setInstant("updated_at", now)
+            batch.addStatement(deleteDoctorByIndividual.bind()
                     .setUuid("doctor_id",     doctorId));
         } else {
             for (UUID clinicId : clinicIds) {
-                batch.addStatement(softDeleteDoctorClinic.bind()
-                        .setInstant("updated_at", now)
+                batch.addStatement(deleteDoctorClinic.bind()
                         .setUuid("clinic_id",     clinicId)
                         .setUuid("doctor_id",     doctorId));
             }
         }
 
         for (Row row : locs) {
-            batch.addStatement(softDeleteDoctorLocation.bind()
+            batch.addStatement(deleteDoctorLocation.bind()
                     .setString("geohash_prefix", row.getString("geohash_prefix"))
                     .setUuid("clinic_id",        row.getUuid("clinic_id"))
                     .setUuid("doctor_id",        doctorId));
@@ -654,6 +634,49 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
     // -------------------------------------------------------------------------
     // Reactivate
     // -------------------------------------------------------------------------
+
+    @Override
+    public void removeIndividualPractice(UUID doctorId) {
+        Instant now = Instant.now();
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(deleteDoctorByIndividual.bind()
+                        .setUuid("doctor_id", doctorId));
+
+        ResultSet locs = session.execute(selectGeoPrefixByDoctorAndClinic.bind()
+                .setUuid("doctor_id", doctorId)
+                .setUuid("clinic_id", NO_CLINIC_ID));
+        for (Row row : locs) {
+            batch.addStatement(deleteDoctorLocation.bind()
+                    .setString("geohash_prefix", row.getString("geohash_prefix"))
+                    .setUuid("clinic_id",        NO_CLINIC_ID)
+                    .setUuid("doctor_id",        doctorId));
+        }
+        session.execute(batch.build());
+        clearLocationCache();
+    }
+
+    @Override
+    public void updateType(UUID doctorId, DoctorType type) {
+        Instant now = Instant.now();
+        Row doc = session.execute(selectDoctorById.bind().setUuid("doctor_id", doctorId)).one();
+        List<UUID> clinicIds = doc != null ? doc.getList("clinic_ids", UUID.class) : Collections.emptyList();
+
+        BatchStatementBuilder batch = BatchStatement.builder(DefaultBatchType.LOGGED)
+                .addStatement(updateDoctorType.bind()
+                        .setString("type", type.name())
+                        .setInstant("updated_at", now)
+                        .setUuid("doctor_id", doctorId));
+
+        for (UUID clinicId : clinicIds) {
+            batch.addStatement(updateDoctorClinicType.bind()
+                    .setString("type", type.name())
+                    .setInstant("updated_at", now)
+                    .setUuid("clinic_id", clinicId)
+                    .setUuid("doctor_id", doctorId));
+        }
+        session.execute(batch.build());
+        redisUtil.deleteAsync(CACHE_DOCTOR_PREFIX + doctorId);
+    }
 
     @Override
     public boolean isDeleted(UUID doctorId) {
@@ -676,17 +699,18 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setInstant("updated_at",    now));
 
         if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
-            batch.addStatement(reactivateDoctorIndividual.bind()
+            batch.addStatement(insertDoctorByIndividual.bind()
                     .setUuid("doctor_id",      d.getId())
                     .setString("name",           d.getName())
                     .setString("type",           d.getType().name())
                     .setString("specialization", d.getSpecialization())
                     .setString("phone",          d.getPhone())
                     .setBoolean("is_active",     d.isActive())
+                    .setBoolean("is_deleted",    false)
                     .setInstant("updated_at",    now));
         } else {
             for (UUID clinicId : d.getClinicIds()) {
-                batch.addStatement(reactivateDoctorClinic.bind()
+                batch.addStatement(insertDoctorByClinic.bind()
                         .setUuid("clinic_id",      clinicId)
                         .setUuid("doctor_id",      d.getId())
                         .setString("name",           d.getName())
@@ -694,6 +718,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .setString("specialization", d.getSpecialization())
                         .setString("phone",          d.getPhone())
                         .setBoolean("is_active",     d.isActive())
+                        .setBoolean("is_deleted",    false)
+                        .setInstant("created_at",    now)
                         .setInstant("updated_at",    now));
             }
         }
@@ -716,14 +742,19 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         batch.addStatement(
                 update("doctor_service", "doctors")
                         .append("clinic_ids", literal(Collections.singletonList(clinicId)))
-                        .setColumn("type",       literal(DoctorType.DOCTOR_TYPE_CLINIC_DOCTOR.name()))
                         .setColumn("updated_at", literal(now))
                         .whereColumn("doctor_id").isEqualTo(literal(doctorId))
                         .build()
         );
 
-        if (d.getClinicIds() == null || d.getClinicIds().isEmpty()) {
-            batch.addStatement(deleteDoctorByIndividual.bind().setUuid("doctor_id", doctorId));
+        // Always update doctors_by_individual if the doctor is an individual practitioner
+        if (d.getType() == DoctorType.DOCTOR_TYPE_INDIVIDUAL) {
+            batch.addStatement(
+                    update("doctor_service", "doctors_by_individual")
+                            .setColumn("updated_at", literal(now))
+                            .whereColumn("doctor_id").isEqualTo(literal(doctorId))
+                            .build()
+            );
         }
 
         batch.addStatement(insertDoctorByClinic.bind()
@@ -757,8 +788,8 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                         .whereColumn("doctor_id").isEqualTo(literal(doctorId))
                         .build()
         );
-        batch.addStatement(softDeleteDoctorClinic.bind()
-                .setInstant("updated_at", now)
+
+        batch.addStatement(deleteDoctorClinic.bind()
                 .setUuid("clinic_id",     clinicId)
                 .setUuid("doctor_id",     doctorId));
 
@@ -766,29 +797,10 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
                 .setUuid("doctor_id", doctorId)
                 .setUuid("clinic_id", clinicId));
         for (Row row : locs) {
-            batch.addStatement(softDeleteDoctorLocation.bind()
+            batch.addStatement(deleteDoctorLocation.bind()
                     .setString("geohash_prefix", row.getString("geohash_prefix"))
                     .setUuid("clinic_id",        clinicId)
                     .setUuid("doctor_id",        doctorId));
-        }
-
-        List<UUID> remaining = d.getClinicIds();
-        if (remaining != null && remaining.size() == 1 && remaining.contains(clinicId)) {
-            batch.addStatement(
-                    update("doctor_service", "doctors")
-                            .setColumn("type", literal(DoctorType.DOCTOR_TYPE_INDIVIDUAL.name()))
-                            .whereColumn("doctor_id").isEqualTo(literal(doctorId))
-                            .build()
-            );
-            batch.addStatement(insertDoctorByIndividual.bind()
-                    .setUuid("doctor_id",      d.getId())
-                    .setString("name",           d.getName())
-                    .setString("type",           DoctorType.DOCTOR_TYPE_INDIVIDUAL.name())
-                    .setString("specialization", d.getSpecialization())
-                    .setString("phone",          d.getPhone())
-                    .setBoolean("is_active",     d.isActive())
-                    .setBoolean("is_deleted",    false)
-                    .setInstant("updated_at",    now));
         }
 
         session.execute(batch.build());
@@ -835,20 +847,25 @@ public class DoctorRepositoryImpl implements DoctorRepositoryPort {
         }
 
         record DoctorWithDistance(Doctor doctor, double distanceKm) {}
-        Map<UUID, DoctorWithDistance> seen = new LinkedHashMap<>();
+        // Composite key to allow the same doctor at multiple locations
+        record DoctorClinicKey(UUID doctorId, UUID clinicId) {}
+        Map<DoctorClinicKey, DoctorWithDistance> seen = new LinkedHashMap<>();
 
         for (String p : prefixes) {
             ResultSet rs = session.execute(selectByGeohash.bind(p, true));
             for (Row r : rs) {
                 UUID doctorId = r.getUuid("doctor_id");
-                if (seen.containsKey(doctorId)) continue;
+                UUID clinicId = r.getUuid("clinic_id");
+                DoctorClinicKey key = new DoctorClinicKey(doctorId, clinicId);
+                
+                if (seen.containsKey(key)) continue;
 
                 double     dLat    = r.getDouble("latitude");
                 double     dLon    = r.getDouble("longitude");
                 double     dist    = haversineKm(lat, lon, dLat, dLon);
                 String     typeStr = r.getString("type");
                 DoctorType type    = typeStr != null ? DoctorType.valueOf(typeStr) : null;
-                seen.put(doctorId, new DoctorWithDistance(MapperClass.mapLocationRow(r, type, dist), dist));
+                seen.put(key, new DoctorWithDistance(MapperClass.mapLocationRow(r, type, dist), dist));
             }
         }
 

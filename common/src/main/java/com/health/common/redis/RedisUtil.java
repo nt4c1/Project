@@ -29,9 +29,15 @@ public interface RedisUtil {
 
     Long increment(String key, long ttlSeconds);
 
+    Long decrement(String key);
+
     void lpush(String key, String value, int limit);
 
     java.util.List<String> lrange(String key, int start, int end);
+
+    Long sadd(String key, String... members);
+
+    Long scard(String key);
 
     String tryLock(String key, long ttlMillis);
 

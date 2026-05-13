@@ -25,7 +25,11 @@ public interface DoctorInterface {
 
     TokenResponse loginDoctor(@NotBlank String email, @NotBlank String password);
 
+    TokenResponse refreshToken(@NotBlank String refreshToken);
+
     ValidateTokenResponse validateDoctor(@NotBlank String token);
+
+    java.util.Optional<Doctor> getDoctor(@NotNull UUID doctorId);
 
     List<Doctor> getDoctorsByClinic(@NotNull UUID clinicId);
 

@@ -35,5 +35,9 @@ void acceptAppointment(@NotNull Appointment appointment, String meetingLink);
 
     List<Appointment> getAppointment(@NotNull UUID doctorId, @NotNull LocalDate date);
 
+    List<Appointment> getDoctorAppointments(@NotNull UUID doctorId);
+
+    List<Appointment> getAppointmentsByStatus(@NotNull UUID doctorId, @NotNull String status, LocalDate date);
+
     List<Appointment> pendingAppointment(@NotNull UUID doctorId, @NotNull LocalDate date);
-}
+    }

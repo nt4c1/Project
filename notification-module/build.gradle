@@ -12,6 +12,7 @@ dependencies {
 
     // Micronaut core
     annotationProcessor "io.micronaut:micronaut-inject-java"
+    annotationProcessor "io.micronaut.validation:micronaut-validation-processor"
     implementation "io.micronaut:micronaut-inject"
     implementation "io.micronaut.validation:micronaut-validation"
     

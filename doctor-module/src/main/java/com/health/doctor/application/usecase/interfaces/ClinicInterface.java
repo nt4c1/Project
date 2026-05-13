@@ -13,6 +13,10 @@ public interface ClinicInterface {
 
     TokenResponse loginClinic(@NotBlank String email, @NotBlank String password);
 
+    TokenResponse refreshToken(@NotBlank String refreshToken);
+
+    com.health.grpc.clinic.GetClinicStatsResponse getClinicStats(@NotNull UUID clinicId);
+
     void updateClinic(@NotNull UUID clinicId, @NotBlank String name);
 
     void deleteClinic(@NotNull UUID clinicId);

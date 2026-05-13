@@ -16,11 +16,19 @@ public class AdminRepositoryImpl implements AdminRepositoryPort {
     private final CqlSession session;
     private final PreparedStatement selectByEmail;
     private final PreparedStatement selectById;
+    private final PreparedStatement countDoctors;
+    private final PreparedStatement countPatients;
+    private final PreparedStatement countClinics;
+    private final PreparedStatement countAppointments;
 
     public AdminRepositoryImpl(CqlSession session) {
         this.session = session;
         this.selectByEmail = session.prepare("SELECT admin_id FROM doctor_service.admins_by_email WHERE email = ?");
         this.selectById = session.prepare("SELECT * FROM doctor_service.admins WHERE admin_id = ?");
+        this.countDoctors = session.prepare("SELECT count(*) FROM doctor_service.doctors");
+        this.countPatients = session.prepare("SELECT count(*) FROM doctor_service.patients");
+        this.countClinics = session.prepare("SELECT count(*) FROM doctor_service.clinics");
+        this.countAppointments = session.prepare("SELECT count(*) FROM doctor_service.appointments_by_id");
     }
 
     @Override
@@ -32,7 +40,8 @@ public class AdminRepositoryImpl implements AdminRepositoryPort {
         return findById(row.getUuid("admin_id"));
     }
 
-    private Optional<Admin> findById(java.util.UUID id) {
+    @Override
+    public Optional<Admin> findById(java.util.UUID id) {
         ResultSet rs = session.execute(selectById.bind(id));
         Row row = rs.one();
         if (row == null) return Optional.empty();
@@ -45,5 +54,33 @@ public class AdminRepositoryImpl implements AdminRepositoryPort {
                 row.getInstant("created_at"),
                 row.getInstant("updated_at")
         ));
+    }
+
+    @Override
+    public long countDoctors() {
+        ResultSet rs = session.execute(countDoctors.bind());
+        Row row = rs.one();
+        return row != null ? row.getLong(0) : 0L;
+    }
+
+    @Override
+    public long countPatients() {
+        ResultSet rs = session.execute(countPatients.bind());
+        Row row = rs.one();
+        return row != null ? row.getLong(0) : 0L;
+    }
+
+    @Override
+    public long countClinics() {
+        ResultSet rs = session.execute(countClinics.bind());
+        Row row = rs.one();
+        return row != null ? row.getLong(0) : 0L;
+    }
+
+    @Override
+    public long countAppointments() {
+        ResultSet rs = session.execute(countAppointments.bind());
+        Row row = rs.one();
+        return row != null ? row.getLong(0) : 0L;
     }
 }

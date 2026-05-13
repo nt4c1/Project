@@ -1,9 +1,9 @@
 package com.health.patient.adapters.output.nats;
 
-import io.micronaut.nats.annotation.NatsClient;
+import io.micronaut.nats.jetstream.annotation.JetStreamClient;
 import io.micronaut.nats.annotation.Subject;
 
-@NatsClient
+@JetStreamClient
 public interface PatientNatsClient {
 
     @Subject("patient.created")

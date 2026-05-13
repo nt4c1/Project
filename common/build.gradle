@@ -7,6 +7,8 @@ plugins {
 dependencies {
     api platform("io.micronaut.platform:micronaut-parent:${rootProject.ext.micronautVersion}")
 
+    // gRPC
+    api "io.micronaut.grpc:micronaut-grpc-server-runtime:4.9.0"
     api "io.grpc:grpc-stub:${rootProject.ext.grpcVersion}"
     api "io.grpc:grpc-protobuf:${rootProject.ext.grpcVersion}"
     api "com.google.protobuf:protobuf-java:3.25.8"

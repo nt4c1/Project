@@ -17,25 +17,22 @@ public class Patient implements Serializable {
     private String name;
     private String email;
     private String phone;
-    private String passwordHash;
     private boolean isDeleted;
     private Instant createdAt;
     private Instant updatedAt;
 
-    public Patient(UUID id, String name, String email, String phone, String passwordHash) {
+    public Patient(UUID id, String name, String email, String phone) {
         this.id           = id;
         this.name         = name;
         this.email        = email;
         this.phone        = phone;
-        this.passwordHash = passwordHash;
     }
 
     public Patient(UUID id, String name, String email, String phone,
-                   String passwordHash, boolean isDeleted,
-                   Instant createdAt, Instant updatedAt) {
-        this(id, name, email, phone, passwordHash);
+                   boolean isDeleted, Instant createdAt, Instant updatedAt) {
+        this(id, name, email, phone);
         this.isDeleted  = isDeleted;
         this.createdAt  = createdAt;
         this.updatedAt  = updatedAt;
     }
-}
+    }

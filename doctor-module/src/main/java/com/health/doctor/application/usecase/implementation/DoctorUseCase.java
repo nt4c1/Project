@@ -1,33 +1,38 @@
 package com.health.doctor.application.usecase.implementation;
 
-import com.health.common.auth.GrpcAuthInterceptor;
+import com.health.common.auth.JwtAuthInterceptor;
 import com.health.common.auth.JwtProvider;
 import com.health.common.exception.AlreadyExistsException;
 import com.health.common.exception.BookingException;
+import com.health.common.exception.InvalidArgumentException;
 import com.health.common.exception.NotFoundException;
+import com.health.common.exception.UnauthorizedException;
 import com.health.common.redis.RedisUtil;
 import com.health.common.utils.DateTimeUtils;
+import com.health.common.utils.SecurityUtils;
 import com.health.common.utils.ValidationUtil;
-import com.health.common.exception.InvalidArgumentException;
+import com.health.doctor.adapters.output.nats.DoctorNatsClient;
+import com.health.doctor.adapters.output.persistence.repository.DoctorRepositoryImpl;
 import com.health.doctor.application.service.LocationService;
 import com.health.doctor.application.usecase.interfaces.DoctorInterface;
 import com.health.doctor.domain.model.*;
 import com.health.doctor.domain.ports.*;
-import com.health.doctor.adapters.output.nats.DoctorNatsClient;
-import com.health.doctor.adapters.output.persistence.repository.DoctorRepositoryImpl;
 import com.health.doctor.mapper.MapperClass;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.auth.ValidateTokenResponse;
 import com.health.grpc.doctor.DoctorActiveResponse;
+import io.micronaut.validation.Validated;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.extern.slf4j.Slf4j;
 import org.mindrot.jbcrypt.BCrypt;
-import io.micronaut.validation.Validated;
 
-import java.time.*;
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -105,7 +110,9 @@ public class DoctorUseCase implements DoctorInterface {
                         }
                     }
                 }
+                log.info("Sending NATS event doctor.created (reactivation) for ID: {}", existingId);
                 natsClient.sendDoctorCreated(existingId.toString());
+                log.info("NATS event doctor.created (reactivation) initiation complete for ID: {}", existingId);
                 return existingId;
             }
             throw new AlreadyExistsException("Doctor already exists with email: " + email);
@@ -133,8 +140,41 @@ public class DoctorUseCase implements DoctorInterface {
                 }
             }
         }
+        log.info("Sending NATS event doctor.created for ID: {}", doctorId);
         natsClient.sendDoctorCreated(doctorId.toString());
+        log.info("NATS event doctor.created initiation complete for ID: {}", doctorId);
         return doctorId;
+    }
+
+    @Override
+    public TokenResponse refreshToken(@NotBlank String refreshToken) {
+        if (!jwtProvider.isValid(refreshToken)) {
+            throw new InvalidArgumentException("Invalid refresh token");
+        }
+
+        String type = jwtProvider.extractClaims(refreshToken).get("type", String.class);
+        if (!"refresh".equals(type)) {
+            throw new InvalidArgumentException("Invalid token type");
+        }
+
+        String userId = jwtProvider.extractUserId(refreshToken);
+        Doctor doctor = repo.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new NotFoundException("Doctor not found"));
+
+        if (repo.isDeleted(doctor.getId())) {
+            throw new NotFoundException("Doctor not found");
+        }
+
+        String accessToken = jwtProvider.generateAccessToken(doctor.getId().toString(), "Doctor");
+        String newRefreshToken = jwtProvider.generateRefreshToken(doctor.getId().toString());
+
+        return TokenResponse.newBuilder()
+                .setSuccess(true)
+                .setAccessToken(accessToken)
+                .setRefreshToken(newRefreshToken)
+                .setDoctor(MapperClass.toMsg(doctor))
+                .setMessage("Token refreshed successfully")
+                .build();
     }
 
     @Override
@@ -185,6 +225,11 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
+    public Optional<Doctor> getDoctor(@NotNull UUID doctorId) {
+        return repo.findById(doctorId);
+    }
+
+    @Override
     public List<Doctor> getDoctorsByClinic(@NotNull UUID clinicId) {
         return repo.findByClinicId(clinicId);
     }
@@ -194,13 +239,13 @@ public class DoctorUseCase implements DoctorInterface {
         // Resolve text to coordinates and canonical location info
         Location resolved = locationService.resolve(location);
         String geohash = resolved.getGeohash();
-        String prefix = geohash.substring(0, Math.min(geohash.length(), 6));
+        String prefix = geohash.substring(0, Math.min(geohash.length(), 6));//TODO safety check is it required
         
         // Try Geohash Cache first
         String geoCacheKey = CACHE_LOCATION_PREFIX + "nb:" + prefix;
         List<Doctor> found = null;
         try {
-            found = redisUtil.get(geoCacheKey, new com.fasterxml.jackson.core.type.TypeReference<List<Doctor>>() {});
+            found = redisUtil.get(geoCacheKey, new com.fasterxml.jackson.core.type.TypeReference<List<Doctor>>() {});//TODO other Options to TypeReference
             if (found != null) {
                 log.info("Redis cache hit for Nearby (Geohash): {}", prefix);
             }
@@ -209,7 +254,7 @@ public class DoctorUseCase implements DoctorInterface {
         }
 
         // Database Search if not in cache
-        if (found == null) {
+        if (found == null) { //TODO if possible trim the api to English and then check
             found = repo.findByLocationText(resolved.getLocationText());
             log.info("Doctors found by Location_Text: {} (count: {})", resolved.getLocationText(), found != null ? found.size() : 0);
 
@@ -238,7 +283,9 @@ public class DoctorUseCase implements DoctorInterface {
     private void enrichDoctorsWithRatings(List<Doctor> doctors) {
         if (doctors == null || doctors.isEmpty()) return;
         for (Doctor d : doctors) {
-            d.setAverageRating(reviewRepo.getAverageRating(d.getId()));
+            ReviewRepositoryPort.RatingSummary summary = reviewRepo.getRatingSummary(d.getId());
+            d.setAverageRating(summary.averageRating());
+            d.setReviewCount(summary.reviewCount());
         }
     }
 
@@ -345,7 +392,27 @@ public class DoctorUseCase implements DoctorInterface {
     }
 
     @Override
-    public void updateDoctorLocation(@NotNull UUID doctorId,UUID clinicId, @NotBlank String locationText) {
+    public void updateDoctorLocation(@NotNull UUID doctorId, UUID clinicId, @NotBlank String locationText) {
+        // Authorization check
+        String role = SecurityUtils.getCurrentUserRole();
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+
+        if (clinicId != null) {
+            // Clinic-based update: Only the clinic itself can perform this
+            if (!"Clinic".equalsIgnoreCase(role) || !currentUserId.equals(clinicId)) {
+                throw new UnauthorizedException("Only the clinic can update doctor location for its clinic ID.");
+            }
+            // Verify doctor belongs to this clinic
+            Doctor doc = repo.findById(doctorId)
+                    .orElseThrow(() -> new NotFoundException("Doctor not found: " + doctorId));
+            if (doc.getClinicIds() == null || !doc.getClinicIds().contains(clinicId)) {
+                throw new UnauthorizedException("Doctor does not belong to this clinic.");
+            }
+        } else {
+            // Individual doctor update: Only the doctor themselves can perform this
+            SecurityUtils.validateOwnership(doctorId);
+        }
+
         Location location = locationService.resolve(locationText);
         repo.updateLocation(doctorId, clinicId, location);
         natsClient.sendDoctorUpdated(doctorId.toString());
@@ -353,13 +420,28 @@ public class DoctorUseCase implements DoctorInterface {
 
     @Override
     public void updateDoctor(@NotNull UUID doctorId, @NotBlank String email, @NotBlank String password, @NotBlank String phone) {
+        // Ownership check
+        SecurityUtils.validateOwnership(doctorId);
+
         repo.updateDoctor(doctorId, email, password, phone);
         natsClient.sendDoctorUpdated(doctorId.toString());
     }
 
     @Override
     public void addClinicToDoctor(@NotNull UUID doctorId, @NotNull List<UUID> clinicIds) {
-        if (clinicIds == null || clinicIds.isEmpty()) return;
+        // Authorization check: Only Clinics (for themselves) or Admin can add doctors
+        String role = SecurityUtils.getCurrentUserRole();
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+
+        if ("Clinic".equalsIgnoreCase(role)) {
+            if (clinicIds.size() != 1 || !clinicIds.get(0).equals(currentUserId)) {
+                throw new UnauthorizedException("Clinics can only add doctors to themselves.");
+            }
+        } else if (!"Admin".equalsIgnoreCase(role)) {
+            throw new UnauthorizedException("Only Clinics or Admins can add doctors to clinics.");
+        }
+
+        if (clinicIds.isEmpty()) return;
 
         Doctor doctor = repo.findById(doctorId)
                 .orElseThrow(() -> new NotFoundException("Doctor not found: " + doctorId));
@@ -373,6 +455,13 @@ public class DoctorUseCase implements DoctorInterface {
 
         if (newClinicIds.isEmpty()) return;
 
+        // Requirement: change type to CLINIC_DOCTOR and remove from individual practice
+        if (doctor.getType() == DoctorType.DOCTOR_TYPE_INDIVIDUAL) {
+            repo.updateType(doctorId, DoctorType.DOCTOR_TYPE_CLINIC_DOCTOR);
+            repo.removeIndividualPractice(doctorId);
+            doctor.setType(DoctorType.DOCTOR_TYPE_CLINIC_DOCTOR);
+        }
+
         for (UUID clinicId : newClinicIds) {
             repo.addClinicId(doctorId, clinicId);
             Location local = clinicRepo.getLocation(clinicId);
@@ -385,7 +474,19 @@ public class DoctorUseCase implements DoctorInterface {
 
     @Override
     public void removeClinicFromDoctor(@NotNull UUID doctorId, @NotNull List<UUID> clinicIds) {
-        if (clinicIds == null || clinicIds.isEmpty()) return;
+        // Authorization check: Only Clinics (for themselves) or Admin can remove doctors
+        String role = SecurityUtils.getCurrentUserRole();
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+
+        if ("Clinic".equalsIgnoreCase(role)) {
+            if (clinicIds.size() != 1 || !clinicIds.get(0).equals(currentUserId)) {
+                throw new UnauthorizedException("Clinics can only remove doctors from themselves.");
+            }
+        } else if (!"Admin".equalsIgnoreCase(role)) {
+            throw new UnauthorizedException("Only Clinics or Admins can remove doctors from clinics.");
+        }
+
+        if (clinicIds.isEmpty()) return;
 
         Doctor doctor = repo.findById(doctorId)
                 .orElseThrow(() -> new NotFoundException("Doctor not found: " + doctorId));
@@ -418,11 +519,24 @@ public class DoctorUseCase implements DoctorInterface {
         for (UUID clinicId : toRemove) {
             repo.removeClinicId(doctorId, clinicId);
         }
+
+        // vice versa: if no more clinics, change back to individual
+        Doctor updatedDoc = repo.findById(doctorId).orElse(null);
+        if (updatedDoc != null && (updatedDoc.getClinicIds() == null || updatedDoc.getClinicIds().isEmpty())) {
+            updatedDoc.setType(DoctorType.DOCTOR_TYPE_INDIVIDUAL);
+            repo.updateType(doctorId, DoctorType.DOCTOR_TYPE_INDIVIDUAL);
+            // Re-save to add to doctors_by_individual (since save() handles it based on type)
+            repo.save(updatedDoc);
+        }
+
         natsClient.sendDoctorUpdated(doctorId.toString());
     }
 
     @Override
     public void deleteDoctor(@NotNull UUID doctorId, @NotBlank String email, @NotBlank String password) {
+        // Ownership check
+        SecurityUtils.validateOwnership(doctorId);
+
         DoctorCredentials credentials = credentialsRepo.findByEmail(email)
                 .orElseThrow(() -> new NotFoundException("Doctor not found with email: " + email));
 
@@ -448,11 +562,11 @@ public class DoctorUseCase implements DoctorInterface {
 
     @Override
     public void resetPassword(@NotBlank String newPassword) {
-        String userId = GrpcAuthInterceptor.USER_ID_KEY.get();
-        String role = GrpcAuthInterceptor.ROLE_KEY.get();
-        String type = GrpcAuthInterceptor.TOKEN_TYPE_KEY.get();
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        String role = SecurityUtils.getCurrentUserRole();
+        String type = JwtAuthInterceptor.TOKEN_TYPE_KEY.get();
 
-        if (userId == null || role == null || type == null) {
+        if (currentUserId == null || role == null || type == null) {
             throw new InvalidArgumentException("Authentication context missing");
         }
 
@@ -465,8 +579,8 @@ public class DoctorUseCase implements DoctorInterface {
         }
 
         String passwordHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-        credentialsRepo.updatePassword(UUID.fromString(userId), passwordHash);
-        log.info("Password reset successful for doctor: {}", userId);
+        credentialsRepo.updatePassword(currentUserId, passwordHash);
+        log.info("Password reset successful for doctor: {}", currentUserId);
     }
 
     @Override
@@ -474,13 +588,12 @@ public class DoctorUseCase implements DoctorInterface {
         ZonedDateTime now = DateTimeUtils.now();
         DayOfWeek currentDay = now.getDayOfWeek();
 
-        Optional<DoctorSchedule> scheduleOpt;
-        if (clinicId != null && !DoctorRepositoryImpl.NO_CLINIC_ID.equals(clinicId)) {
-            scheduleOpt = scheduleRepo.findByDoctorAndClinic(doctorId, clinicId);
-        } else {
-            scheduleOpt = scheduleRepo.findByDoctors(List.of(doctorId)).stream().findFirst();
-        }
+        UUID effectiveClinicId = (clinicId != null) ? clinicId : DoctorRepositoryPort.NO_CLINIC_ID;
+        Optional<DoctorSchedule> scheduleOpt = scheduleRepo.findByDoctorAndClinic(doctorId, effectiveClinicId);
 
+        // Fallback: If no specific schedule found for individual practice, check if they are active anywhere?
+        // Actually, the user wants to differentiate, so we should stay in the requested context.
+        
         if (scheduleOpt.isPresent()) {
             DoctorSchedule schedule = scheduleOpt.get();
             boolean isActive = schedule.getWorkingDays().contains(currentDay);

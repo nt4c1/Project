@@ -27,16 +27,24 @@ message DoctorMessage {
   string         specialization     = 4;
   bool           is_active          = 5;
   repeated string clinic_ids        = 6;
-  double distance                   = 7;
+  double         distance           = 7;
   string         phone              = 8;
   string         next_possible_date = 10;
   double         average_rating     = 11;
+  int32          review_count       = 12;
 }
 
 message ClinicMessage {
   string clinic_id     = 1;
   string name          = 2;
   string location_text = 3;
+}
+
+message PatientMessage {
+  string patient_id = 1;
+  string name       = 2;
+  string email      = 3;
+  string phone      = 4;
 }
 
 enum AvailabilityFilter {
@@ -65,4 +73,23 @@ message AppointmentMessage {
   string            cancellation_reason = 12;
   string            clinic_id           = 13;
   string            meeting_link        = 14;
+}
+
+message ScheduleMessage {
+  string doctor_id = 1;
+  string clinic_id = 2;
+  repeated string working_days = 3;
+  string start_time = 4;
+  string end_time = 5;
+  int32 slot_duration_minutes = 6;
+  int32 max_appointments_day = 7;
+}
+
+message ReviewMessage {
+  string doctor_id = 1;
+  string patient_id = 2;
+  string patient_name = 3;
+  int32 rating = 4;
+  string comment = 5;
+  string created_at = 6;
 }

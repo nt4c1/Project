@@ -202,6 +202,16 @@ public class RedisUtilImpl implements RedisUtil {
     }
 
     @Override
+    public Long decrement(String key) {
+        try {
+            return connection.sync().decr(key);
+        } catch (Exception e) {
+            log.error("Redis DECR failed for key: {}", key, e);
+            return null;
+        }
+    }
+
+    @Override
     public void lpush(String key, String value, int limit) {
         try {
             connection.sync().lpush(key, value);
@@ -220,6 +230,26 @@ public class RedisUtilImpl implements RedisUtil {
         } catch (Exception e) {
             log.error("Redis LRANGE failed for key: {}", key, e);
             return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public Long sadd(String key, String... members) {
+        try {
+            return connection.sync().sadd(key, members);
+        } catch (Exception e) {
+            log.error("Redis SADD failed for key: {}", key, e);
+            return null;
+        }
+    }
+
+    @Override
+    public Long scard(String key) {
+        try {
+            return connection.sync().scard(key);
+        } catch (Exception e) {
+            log.error("Redis SCARD failed for key: {}", key, e);
+            return 0L;
         }
     }
 

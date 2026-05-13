@@ -10,7 +10,6 @@ import com.health.grpc.auth.ForgotPasswordRequest;
 import com.health.grpc.auth.ForgotPasswordResponse;
 import com.health.grpc.auth.ResetPasswordRequest;
 import com.health.grpc.auth.ResetPasswordResponse;
-import com.health.grpc.auth.TokenRequest;
 import com.health.grpc.auth.TokenResponse;
 import com.health.grpc.clinic.*;
 import com.health.grpc.common.ClinicMessage;
@@ -23,7 +22,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import static com.health.common.auth.GrpcAuthInterceptor.*;
+import static com.health.common.auth.JwtAuthInterceptor.*;
 
 @Slf4j
 @GrpcService
@@ -47,14 +46,19 @@ public class ClinicGrpcApi extends ClinicGrpcServiceGrpc.ClinicGrpcServiceImplBa
     }
 
     @Override
-    public void generateClinicToken(TokenRequest request, StreamObserver<TokenResponse> observer) {
+    public void refreshToken(com.health.grpc.auth.RefreshTokenRequest request, StreamObserver<TokenResponse> observer) {
         handle(observer, () -> {
-            String email = EMAIL_KEY.get();
-            String password = PASSWORD_KEY.get();
-            if (email == null || password == null) {
-                throw new DomainException("Credentials missing from basic auth", Status.UNAUTHENTICATED);
-            }
-            TokenResponse response = clinicUseCase.loginClinic(email, password);
+            TokenResponse response = clinicUseCase.refreshToken(request.getRefreshToken());
+            observer.onNext(response);
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void getClinicStats(GetClinicStatsRequest request, StreamObserver<GetClinicStatsResponse> observer) {
+        handle(observer, () -> {
+            if (request.getClinicId().isBlank()) throw new DomainException("Clinic ID is required", Status.INVALID_ARGUMENT);
+            GetClinicStatsResponse response = clinicUseCase.getClinicStats(UUID.fromString(request.getClinicId()));
             observer.onNext(response);
             observer.onCompleted();
         });
@@ -181,6 +185,42 @@ public class ClinicGrpcApi extends ClinicGrpcServiceGrpc.ClinicGrpcServiceImplBa
                             .collect(Collectors.toList()))
                     .setTotalPages(totalPages)
                     .setTotalElements(totalElements)
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void addDoctorToClinic(AddDoctorToClinicRequest request, StreamObserver<AddDoctorToClinicResponse> observer) {
+        handle(observer, () -> {
+            if (request.getClinicId().isBlank()) throw new DomainException("Clinic ID is required", Status.INVALID_ARGUMENT);
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+
+            ensureClinic(request.getClinicId());
+
+            doctorUseCase.addClinicToDoctor(UUID.fromString(request.getDoctorId()), List.of(UUID.fromString(request.getClinicId())));
+
+            observer.onNext(AddDoctorToClinicResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Doctor added to clinic successfully")
+                    .build());
+            observer.onCompleted();
+        });
+    }
+
+    @Override
+    public void removeDoctorFromClinic(RemoveDoctorFromClinicRequest request, StreamObserver<RemoveDoctorFromClinicResponse> observer) {
+        handle(observer, () -> {
+            if (request.getClinicId().isBlank()) throw new DomainException("Clinic ID is required", Status.INVALID_ARGUMENT);
+            if (request.getDoctorId().isBlank()) throw new DomainException("Doctor ID is required", Status.INVALID_ARGUMENT);
+
+            ensureClinic(request.getClinicId());
+
+            doctorUseCase.removeClinicFromDoctor(UUID.fromString(request.getDoctorId()), List.of(UUID.fromString(request.getClinicId())));
+
+            observer.onNext(RemoveDoctorFromClinicResponse.newBuilder()
+                    .setSuccess(true)
+                    .setMessage("Doctor removed from clinic successfully")
                     .build());
             observer.onCompleted();
         });

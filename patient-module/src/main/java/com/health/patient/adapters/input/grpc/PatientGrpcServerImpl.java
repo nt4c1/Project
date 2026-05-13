@@ -1,6 +1,5 @@
 package com.health.patient.adapters.input.grpc;
 
-import com.health.common.auth.GrpcAuthInterceptor;
 import com.health.doctor.DoctorModuleApi;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.Doctor;
@@ -27,9 +26,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import static com.health.common.auth.GrpcAuthInterceptor.*;
-import static com.health.common.auth.GrpcAuthInterceptor.ROLE_KEY;
-import static com.health.common.auth.GrpcAuthInterceptor.USER_ID_KEY;
+import static com.health.common.auth.JwtAuthInterceptor.*;
 
 @Slf4j
 @Singleton
@@ -49,17 +46,11 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
     // ── Auth ──────────────────────────────────────────────────────────────────
 
     @Override
-    public void patientLogin(TokenRequest request,
+    public void refreshToken(RefreshTokenRequest request,
                              StreamObserver<TokenResponse> observer) {
-        handle(observer, () -> {
-            String email = EMAIL_KEY.get();
-            String password = PASSWORD_KEY.get();
-
-            if (email == null || password == null) {
-                throw new DomainException("Credentials missing from basic auth", Status.UNAUTHENTICATED);
-            }
-            return patientUseCase.loginPatient(email, password);
-        });
+        handle(observer, () ->
+                patientUseCase.refreshToken(request.getRefreshToken())
+        );
     }
 
     @Override
@@ -83,6 +74,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                     request.getPassword(), request.getPhone()
             );
             return RegisterPatientResponse.newBuilder()
+                    .setSuccess(true)
                     .setPatientId(id.toString())
                     .setMessage("Patient registered successfully")
                     .build();
@@ -166,6 +158,7 @@ public class PatientGrpcServerImpl extends PatientGrpcServiceGrpc.PatientGrpcSer
                     request.getPassword()
             );
             return DeletePatientResponse.newBuilder()
+                    .setSuccess(true)
                     .setMessage("Patient deleted successfully")
                     .build();
         });

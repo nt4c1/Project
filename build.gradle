@@ -34,6 +34,10 @@ dependencies {
     implementation project(':notification-module')
     implementation project(':admin-module')
 
+    // Lombok
+    annotationProcessor "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+    compileOnly         "org.projectlombok:lombok:${rootProject.ext.lombokVersion}"
+
     // Serde
     annotationProcessor "io.micronaut.serde:micronaut-serde-processor"
     implementation "io.micronaut.serde:micronaut-serde-jackson"

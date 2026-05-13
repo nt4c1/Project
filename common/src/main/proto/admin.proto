@@ -8,8 +8,7 @@ option java_outer_classname = "AdminProto";
 option java_multiple_files = true;
 
 service AdminGrpcService {
-  // Auth
-  rpc AdminLogin (TokenRequest) returns (TokenResponse);
+  rpc RefreshToken (RefreshTokenRequest) returns (TokenResponse);
   rpc ValidateAdminToken (ValidateTokenRequest) returns (ValidateTokenResponse);
 
   rpc GetSystemStats (GetStatsRequest) returns (GetStatsResponse);
@@ -24,6 +23,7 @@ message GetStatsResponse {
   int64 total_appointments = 3;
   double registration_rate_per_day = 4;
   double appointment_volume_per_day = 5;
+  int64 total_clinics = 6;
 }
 
 message GetEventsRequest {

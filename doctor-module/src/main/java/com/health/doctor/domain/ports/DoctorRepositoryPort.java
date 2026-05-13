@@ -9,6 +9,8 @@ import java.util.UUID;
 
 public interface DoctorRepositoryPort {
 
+    UUID NO_CLINIC_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     void save(Doctor doctor);
 
     void updateLocation(UUID doctorId, UUID clinicId, Location location);
@@ -28,6 +30,10 @@ public interface DoctorRepositoryPort {
     void addClinicId(UUID doctorId, UUID clinicId);
 
     void removeClinicId(UUID doctorId, UUID clinicId);
+
+    void removeIndividualPractice(UUID doctorId);
+
+    void updateType(UUID doctorId, com.health.doctor.domain.model.DoctorType type);
 
     boolean isDeleted(UUID doctorId);
 

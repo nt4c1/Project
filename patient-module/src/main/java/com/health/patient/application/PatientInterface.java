@@ -23,6 +23,8 @@ public interface PatientInterface {
     TokenResponse loginPatient(@NotBlank String email,
                                @NotBlank String password);
 
+    TokenResponse refreshToken(@NotBlank String refreshToken);
+
     ValidateTokenResponse validatePatient(@NotBlank String token);
 
     void updatePatient(@NotNull UUID patientId,

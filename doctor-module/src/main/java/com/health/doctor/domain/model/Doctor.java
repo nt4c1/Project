@@ -27,6 +27,7 @@ public class Doctor {
     private Instant updatedAt;
     private double distance;
     private double averageRating;
+    private int reviewCount;
 
     public Doctor(UUID id, String name, List<UUID> clinicIds, DoctorType type,
                   String specialization, boolean isActive) {

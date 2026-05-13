@@ -95,7 +95,7 @@ graph TD
 2. **Access Control (ACL)**:
     - Doctors can only update their standalone location if they have **no clinic associations**.
     - Clinics can only update location data for doctors **explicitly affiliated** with them.
-3. **Intercepted Auth**: Context Propagation (UID, Role) is handled by the `GrpcAuthInterceptor` to prevent unauthorized cross-resource access.
+3. **Modular Auth**: Authentication is split into two specialized interceptors: `BasicAuthInterceptor` (for initial login and public methods) and `JwtAuthInterceptor` (for Bearer token validation and context propagation). A centralized `LoginService` handles unified login logic across all roles.
 
 ---
 

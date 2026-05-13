@@ -36,7 +36,6 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
     private final PreparedStatement selectIdByEmail;
     private final PreparedStatement deleteEmailLookup;
     private final PreparedStatement updatePatient;
-    private final PreparedStatement updatePassword;
     private final PreparedStatement softDeletePatient;
     private final PreparedStatement reactivatePatient;
     private final PreparedStatement selectAllAppointmentsByPatient;
@@ -50,9 +49,9 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
         this.insertPatient = session.prepare(
                 "INSERT INTO doctor_service.patients " +
-                        "(patient_id, name, email, phone, password_hash, " +
+                        "(patient_id, name, email, phone, " +
                         " is_deleted, created_at, updated_at) " +
-                        "VALUES (?,?,?,?,?,?,?,?) IF NOT EXISTS"
+                        "VALUES (?,?,?,?,?,?,?) IF NOT EXISTS"
         );
         this.insertEmailLookup = session.prepare(
                 "INSERT INTO doctor_service.patients_by_email (email, patient_id) " +
@@ -71,32 +70,28 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
                 "DELETE FROM doctor_service.patients_by_email WHERE email=?"
         );
         this.updatePatient = session.prepare(
-                "UPDATE doctor_service.patients SET email=?, password_hash=?, updated_at=? WHERE patient_id=?"
-        );
-        this.updatePassword = session.prepare(
-                "UPDATE doctor_service.patients SET password_hash=?, updated_at=? WHERE patient_id=?"
+                "UPDATE doctor_service.patients SET email=?, updated_at=? WHERE patient_id=?"
         );
         this.softDeletePatient = session.prepare(
                 "UPDATE doctor_service.patients SET is_deleted=true, updated_at=? WHERE patient_id=?"
         );
         this.reactivatePatient = session.prepare(
-                "UPDATE doctor_service.patients SET name=?, email=?, phone=?, password_hash=?, " +
+                "UPDATE doctor_service.patients SET name=?, email=?, phone=?, " +
                         "is_deleted=false, updated_at=? WHERE patient_id=?"
         );
         this.selectAllAppointmentsByPatient = session.prepare(
                 "SELECT appointment_id, appointment_date, scheduled_time, doctor_id, status " +
                         "FROM doctor_service.appointments_by_patient_all WHERE patient_id=?"
         );
-    }
+        }
 
-    @Override
-    public void save(Patient patient) {
+        @Override
+        public void save(Patient patient) {
         Instant now = Instant.now();
 
         session.execute(insertPatient.bind(
                 patient.getId(), patient.getName(),
                 patient.getEmail(), patient.getPhone(),
-                patient.getPasswordHash(),
                 false, now, now
         ));
         session.execute(insertEmailLookup.bind(
@@ -104,10 +99,10 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         ));
 
         redisUtil.setAsync(CACHE_PREFIX + patient.getId(), patient, TTL);
-    }
+        }
 
-    @Override
-    public Optional<Patient> findById(UUID patientId) {
+        @Override
+        public Optional<Patient> findById(UUID patientId) {
         String cacheKey = CACHE_PREFIX + patientId;
         try {
             Patient cached = redisUtil.get(cacheKey, Patient.class);
@@ -122,26 +117,25 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
         Patient patient = mapRow(r);
         redisUtil.setAsync(cacheKey, patient, TTL);
         return Optional.of(patient);
-    }
+        }
 
-    private Optional<Patient> findByIdWithDeleted(UUID patientId) {
+        private Optional<Patient> findByIdWithDeleted(UUID patientId) {
         Row r = session.execute(selectPatientByIdWithDeleted.bind(patientId)).one();
         if (r == null) return Optional.empty();
         return Optional.of(mapRow(r));
-    }
+        }
 
-    @Override
-    public Optional<Patient> findByEmail(String email) {
+        @Override
+        public Optional<Patient> findByEmail(String email) {
         Row lookup = session.execute(selectIdByEmail.bind(email)).one();
         if (lookup == null) return Optional.empty();
         // Intentionally bypasses cache — fetches including deleted rows for reactivation logic
         return findByIdWithDeleted(lookup.getUuid("patient_id"));
-    }
+        }
 
-    @Override
-    public void updatePatient(UUID patientId, String email, String password) {
+        @Override
+        public void updatePatient(UUID patientId, String email) {
         Instant now          = Instant.now();
-        String  passwordHash = org.mindrot.jbcrypt.BCrypt.hashpw(password, org.mindrot.jbcrypt.BCrypt.gensalt());
 
         // Bust cache before read so we don't serve stale data if anything below fails
         redisUtil.deleteAsync(CACHE_PREFIX + patientId);
@@ -155,22 +149,15 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
             session.execute(insertEmailLookup.bind(email, patientId));
         }
 
-        session.execute(updatePatient.bind(email, passwordHash, now, patientId));
+        session.execute(updatePatient.bind(email, now, patientId));
 
         // Build and cache the updated patient from known state — avoids an extra Cassandra read
-        Patient updated = new Patient(patientId, old.getName(), email, old.getPhone(), passwordHash);
+        Patient updated = new Patient(patientId, old.getName(), email, old.getPhone());
         redisUtil.setAsync(CACHE_PREFIX + patientId, updated, TTL);
-    }
+        }
 
-    @Override
-    public void updatePassword(UUID patientId, String passwordHash) {
-        session.execute(updatePassword.bind(passwordHash, Instant.now(), patientId));
-        // Bust cache — password hash changed, cached Patient object is now stale
-        redisUtil.deleteAsync(CACHE_PREFIX + patientId);
-    }
-
-    @Override
-    public void deletePatient(UUID patientId) {
+        @Override
+        public void deletePatient(UUID patientId) {
         Instant   now = Instant.now();
         ResultSet rs  = session.execute(selectAllAppointmentsByPatient.bind(patientId));
 
@@ -189,21 +176,21 @@ public class PatientRepositoryImpl implements PatientRepositoryPort {
 
         // Bust cache — patient is now soft-deleted, findById should return empty
         redisUtil.deleteAsync(CACHE_PREFIX + patientId);
-    }
+        }
 
-    @Override
-    public boolean isDeleted(UUID patientId) {
+        @Override
+        public boolean isDeleted(UUID patientId) {
         Row r = session.execute(selectPatientByIdWithDeleted.bind(patientId)).one();
         return r != null && r.getBoolean("is_deleted");
-    }
+        }
 
-    @Override
-    public void reactivate(Patient patient) {
+        @Override
+        public void reactivate(Patient patient) {
         session.execute(reactivatePatient.bind(
                 patient.getName(), patient.getEmail(), patient.getPhone(),
-                patient.getPasswordHash(), Instant.now(), patient.getId()
+                Instant.now(), patient.getId()
         ));
         // Warm the cache with the reactivated patient so the next findById is a cache hit
         redisUtil.setAsync(CACHE_PREFIX + patient.getId(), patient, TTL);
-    }
-}
+        }
+        }

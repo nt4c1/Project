@@ -1,27 +1,24 @@
 package com.health.doctor.application.usecase.implementation;
 
-import com.health.common.exception.NotFoundException;
-import com.health.doctor.application.usecase.interfaces.AppointmentInterface;
 import com.health.common.exception.InvalidArgumentException;
+import com.health.common.exception.NotFoundException;
+import com.health.common.exception.UnauthorizedException;
+import com.health.common.utils.SecurityUtils;
+import com.health.doctor.adapters.output.nats.DoctorNatsClient;
+import com.health.doctor.application.usecase.interfaces.AppointmentInterface;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.AppointmentStatus;
 import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
-import com.health.doctor.adapters.output.nats.DoctorNatsClient;
 import com.health.doctor.mapper.MapperClass;
-import com.health.grpc.notification.AppointmentAcceptedEvent;
-import com.health.grpc.notification.AppointmentBookedEvent;
-import com.health.grpc.notification.AppointmentCancelledEvent;
-import com.health.grpc.notification.AppointmentCompletedEvent;
-import com.health.grpc.notification.AppointmentNoShowEvent;
-import com.health.grpc.notification.AppointmentPostponedEvent;
+import com.health.grpc.notification.*;
 import io.micronaut.serde.annotation.Serdeable;
+import io.micronaut.validation.Validated;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import io.micronaut.validation.Validated;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.*;
@@ -56,6 +53,11 @@ public class AppointmentUseCase implements AppointmentInterface {
                                    @NotNull @FutureOrPresent LocalDate date,
                                    @NotNull LocalTime time,
                                    @NotBlank String reasonForVisit) {
+        
+        // Ownership check: If a Patient is calling, they must be creating it for themselves
+        if (SecurityUtils.isPatient()) {
+            SecurityUtils.validateOwnership(patientId);
+        }
 
         // Trigger all database checks in parallel CompletableFuture for faster response
         java.util.concurrent.CompletableFuture<Optional<DoctorSchedule>> scheduleFuture = 
@@ -114,6 +116,9 @@ public class AppointmentUseCase implements AppointmentInterface {
 
     @Override
     public void acceptAppointment(@NotNull Appointment appointment, String meetingLink) {
+        // Ownership check: Only the assigned doctor can accept
+        SecurityUtils.validateOwnership(appointment.getDoctorId());
+
         if (appointment.getStatus() != AppointmentStatus.APPOINTMENT_STATUS_PENDING)
             throw new InvalidArgumentException(
                     "Only Pending Appointments can be accepted, Current status: " + appointment.getStatus()
@@ -135,6 +140,13 @@ public class AppointmentUseCase implements AppointmentInterface {
                                    @NotNull LocalDate date,
                                    @NotNull LocalTime time,
                                    @NotBlank String cancellationReason) {
+        
+        // Ownership check: Either the doctor or the patient can cancel
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        if (currentUserId == null || (!currentUserId.equals(patientId) && !currentUserId.equals(doctorId))) {
+            throw new UnauthorizedException("Access Denied: You do not have permission to cancel this appointment.");
+        }
+
         repo.cancel(appointmentId, patientId, doctorId, date, time, cancellationReason);
         
         // Build a minimal appointment for the event
@@ -144,12 +156,15 @@ public class AppointmentUseCase implements AppointmentInterface {
         
         natsClient.sendAppointmentCancelled(AppointmentCancelledEvent.newBuilder()
                 .setAppointment(MapperClass.toApptMsg(a))
-                .setCancelledBy("UNKNOWN") // Could be enriched if we had more context
+                .setCancelledBy(currentUserId.equals(patientId) ? "PATIENT" : "DOCTOR")
                 .build().toByteArray());
     }
 
     @Override
     public void postponeAppointment(@NotNull Appointment appointment) {
+        // Ownership check: Only the assigned doctor can postpone
+        SecurityUtils.validateOwnership(appointment.getDoctorId());
+
         if (appointment.getStatus() == AppointmentStatus.APPOINTMENT_STATUS_CANCELLED)
             throw new InvalidArgumentException("Cannot postpone a cancelled appointment");
 
@@ -180,6 +195,9 @@ public class AppointmentUseCase implements AppointmentInterface {
 
     @Override
     public void completeAppointment(@NotNull Appointment appointment) {
+        // Ownership check: Only the assigned doctor can complete
+        SecurityUtils.validateOwnership(appointment.getDoctorId());
+
         validateStatusUpdate(appointment);
         repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_COMPLETED.name());
         appointment.setStatus(AppointmentStatus.APPOINTMENT_STATUS_COMPLETED);
@@ -191,6 +209,9 @@ public class AppointmentUseCase implements AppointmentInterface {
 
     @Override
     public void noShowAppointment(@NotNull Appointment appointment) {
+        // Ownership check: Only the assigned doctor can mark as no-show
+        SecurityUtils.validateOwnership(appointment.getDoctorId());
+
         validateStatusUpdate(appointment);
         repo.updateStatus(appointment, AppointmentStatus.APPOINTMENT_STATUS_NO_SHOW.name());
         appointment.setStatus(AppointmentStatus.APPOINTMENT_STATUS_NO_SHOW);
@@ -236,11 +257,31 @@ public class AppointmentUseCase implements AppointmentInterface {
 
     @Override
     public List<Appointment> getAppointment(@NotNull UUID doctorId, @NotNull LocalDate date) {
+        // Ownership check: Doctors can only see their own appointments
+        SecurityUtils.validateOwnership(doctorId);
         return repo.findByDoctorAndDate(doctorId, date);
     }
 
     @Override
+    public List<Appointment> getDoctorAppointments(@NotNull UUID doctorId) {
+        SecurityUtils.validateOwnership(doctorId);
+        return repo.findByDoctor(doctorId);
+    }
+
+    @Override
+    public List<Appointment> getAppointmentsByStatus(@NotNull UUID doctorId, @NotNull String status, LocalDate date) {
+        SecurityUtils.validateOwnership(doctorId);
+        if (date != null) {
+            return repo.findDoctorAndStatus(doctorId, status, date);
+        } else {
+            return repo.findDoctorAndStatus(doctorId, status);
+        }
+    }
+
+    @Override
     public List<Appointment> pendingAppointment(@NotNull UUID doctorId, @NotNull LocalDate date) {
+        // Ownership check: Doctors can only see their own pending appointments
+        SecurityUtils.validateOwnership(doctorId);
         return repo.findPending(doctorId, date);
     }
 }

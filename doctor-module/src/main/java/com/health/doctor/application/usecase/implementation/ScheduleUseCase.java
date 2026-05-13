@@ -1,18 +1,22 @@
 package com.health.doctor.application.usecase.implementation;
 
-import com.health.doctor.application.usecase.interfaces.ScheduleInterface;
 import com.health.common.exception.NotFoundException;
 import com.health.common.exception.ScheduleException;
-import com.health.doctor.domain.model.DoctorSchedule;
+import com.health.common.utils.SecurityUtils;
+import com.health.doctor.application.usecase.interfaces.DoctorInterface;
+import com.health.doctor.application.usecase.interfaces.ScheduleInterface;
 import com.health.doctor.domain.model.Appointment;
 import com.health.doctor.domain.model.AppointmentStatus;
+import com.health.doctor.domain.model.Doctor;
+import com.health.doctor.domain.model.DoctorSchedule;
 import com.health.doctor.domain.ports.AppointmentRepositoryPort;
+import com.health.doctor.domain.ports.DoctorRepositoryPort;
 import com.health.doctor.domain.ports.ScheduleRepositoryPort;
+import io.micronaut.validation.Validated;
 import jakarta.inject.Singleton;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import io.micronaut.validation.Validated;
 
 import java.time.DayOfWeek;
 import java.time.Duration;
@@ -31,12 +35,12 @@ public class ScheduleUseCase implements ScheduleInterface {
 
     private final ScheduleRepositoryPort repo;
     private final AppointmentRepositoryPort appointmentRepo;
+    private final DoctorInterface doctorRepo;
 
-    public ScheduleUseCase(ScheduleRepositoryPort repo, AppointmentRepositoryPort appointmentRepo) {
-
+    public ScheduleUseCase(ScheduleRepositoryPort repo, AppointmentRepositoryPort appointmentRepo, DoctorInterface doctorRepo) {
         this.repo = repo;
-
         this.appointmentRepo = appointmentRepo;
+        this.doctorRepo = doctorRepo;
     }
 
     @Override
@@ -47,6 +51,18 @@ public class ScheduleUseCase implements ScheduleInterface {
                                 @NotNull LocalTime endTime,
                                 @Min(1) int slotDuration,
                                 @Min(1) int maxPerDay) {
+        
+        // Ownership check
+        SecurityUtils.validateOwnership(doctorId);
+
+        if (clinicId != null && !DoctorRepositoryPort.NO_CLINIC_ID.equals(clinicId)) {
+            Doctor doc = doctorRepo.getDoctor(doctorId)
+                    .orElseThrow(() -> new NotFoundException("Doctor not found"));
+            if (doc.getClinicIds() == null || !doc.getClinicIds().contains(clinicId)) {
+                throw new ScheduleException("Doctor does not belong to clinic: " + clinicId);
+            }
+        }
+
         Set<DayOfWeek> days = workingDays.stream()
                 .map(day -> DayOfWeek.valueOf(day.toUpperCase()))
                 .collect(Collectors.toSet());
@@ -82,6 +98,9 @@ public class ScheduleUseCase implements ScheduleInterface {
                                @NotNull LocalTime endTime,
                                @Min(1) int slotDuration,
                                @Min(1) int maxPerDay) {
+        
+        // Ownership check
+        SecurityUtils.validateOwnership(doctorId);
 
         // Check for accepted appointments for this doctor at this clinic
         List<Appointment> accepted = appointmentRepo.findDoctorAndStatus(doctorId, AppointmentStatus.APPOINTMENT_STATUS_ACCEPTED.name());
@@ -129,6 +148,10 @@ public class ScheduleUseCase implements ScheduleInterface {
 
     @Override
     public Optional<DoctorSchedule> getSchedule(@NotNull UUID doctorId, @NotNull UUID clinicId) {
+        // Ownership check: If a doctor is calling, they can only see their own schedule
+        if (SecurityUtils.isDoctor()) {
+            SecurityUtils.validateOwnership(doctorId);
+        }
         return (repo.findByDoctorAndClinic(doctorId, clinicId));
     }
 }

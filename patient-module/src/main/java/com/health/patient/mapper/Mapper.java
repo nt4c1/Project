@@ -16,7 +16,6 @@ public class Mapper {
                 r.getString("name"),
                 r.getString("email"),
                 r.getString("phone"),
-                r.getString("password_hash"),
                 r.getBoolean("is_deleted"),
                 r.getInstant("created_at"),
                 r.getInstant("updated_at")

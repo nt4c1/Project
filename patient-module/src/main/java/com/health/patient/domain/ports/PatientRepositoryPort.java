@@ -12,13 +12,11 @@ public interface PatientRepositoryPort {
 
     Optional<Patient> findByEmail(String email);
 
-    void updatePatient(UUID patientID,String email,String password);
-
-    void updatePassword(UUID patientId, String passwordHash);
+    void updatePatient(UUID patientId, String email);
 
     void deletePatient(UUID patientId);
 
     boolean isDeleted(UUID patientId);
 
     void reactivate(Patient patient);
-}
+    }

@@ -33,6 +33,7 @@ dependencies {
 
     // Micronaut core dependencies should be handled by the BOM
     annotationProcessor "io.micronaut:micronaut-inject-java"
+    annotationProcessor "io.micronaut.validation:micronaut-validation-processor"
     implementation "io.micronaut:micronaut-inject"
     implementation "io.micronaut.validation:micronaut-validation"
 }

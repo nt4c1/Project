@@ -7,12 +7,16 @@ import com.health.grpc.notification.AppointmentCompletedEvent;
 import com.health.grpc.notification.AppointmentNoShowEvent;
 import com.health.grpc.notification.AppointmentPostponedEvent;
 import com.health.notification.application.service.NotificationService;
-import io.micronaut.nats.annotation.NatsListener;
+import io.micronaut.nats.jetstream.annotation.JetStreamListener;
+import io.micronaut.nats.jetstream.annotation.PushConsumer;
 import io.micronaut.nats.annotation.Subject;
+import jakarta.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@NatsListener
+@Singleton
+@JetStreamListener
+@PushConsumer("HEALTH")
 public class NotificationNatsListener {
 
     private final NotificationService notificationService;
@@ -22,6 +26,7 @@ public class NotificationNatsListener {
     }
 
     @Subject("appointment.created")
+    @PushConsumer(value = "HEALTH", durable = "notification-appointment-created-listener-v2")
     public void onAppointmentCreated(byte[] payload) {
         try {
             AppointmentBookedEvent event = AppointmentBookedEvent.parseFrom(payload);
@@ -36,6 +41,7 @@ public class NotificationNatsListener {
     }
 
     @Subject("appointment.accepted")
+    @PushConsumer(value = "HEALTH", durable = "notification-appointment-accepted-listener-v2")
     public void onAppointmentAccepted(byte[] payload) {
         try {
             AppointmentAcceptedEvent event = AppointmentAcceptedEvent.parseFrom(payload);
@@ -50,6 +56,7 @@ public class NotificationNatsListener {
     }
 
     @Subject("appointment.postponed")
+    @PushConsumer(value = "HEALTH", durable = "notification-appointment-postponed-listener-v2")
     public void onAppointmentPostponed(byte[] payload) {
         try {
             AppointmentPostponedEvent event = AppointmentPostponedEvent.parseFrom(payload);
@@ -64,6 +71,7 @@ public class NotificationNatsListener {
     }
 
     @Subject("appointment.cancelled")
+    @PushConsumer(value = "HEALTH", durable = "notification-appointment-cancelled-listener-v2")
     public void onAppointmentCancelled(byte[] payload) {
         try {
             AppointmentCancelledEvent event = AppointmentCancelledEvent.parseFrom(payload);
@@ -77,6 +85,7 @@ public class NotificationNatsListener {
     }
 
     @Subject("appointment.completed")
+    @PushConsumer(value = "HEALTH", durable = "notification-appointment-completed-listener-v2")
     public void onAppointmentCompleted(byte[] payload) {
         try {
             AppointmentCompletedEvent event = AppointmentCompletedEvent.parseFrom(payload);
@@ -90,6 +99,7 @@ public class NotificationNatsListener {
     }
 
     @Subject("appointment.no-show")
+    @PushConsumer(value = "HEALTH", durable = "notification-appointment-noshow-listener-v2")
     public void onAppointmentNoShow(byte[] payload) {
         try {
             AppointmentNoShowEvent event = AppointmentNoShowEvent.parseFrom(payload);

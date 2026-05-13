@@ -26,7 +26,8 @@ public class MapperClass {
                 .setSpecialization(d.getSpecialization() != null ? d.getSpecialization() : "")
                 .setIsActive(d.isActive())
                 .setDistance(d.getDistance())
-                .setAverageRating(d.getAverageRating());
+                .setAverageRating(d.getAverageRating())
+                .setReviewCount(d.getReviewCount());
 
         if (d.getPhone() != null) b.setPhone(d.getPhone());
         if (d.getNextPossibleDate() != null) b.setNextPossibleDate(d.getNextPossibleDate());

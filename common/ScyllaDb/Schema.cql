@@ -221,10 +221,22 @@ CREATE TABLE patients
     name          TEXT,
     email         TEXT,
     phone         TEXT,
-    password_hash TEXT,
     is_deleted    BOOLEAN,
     created_at    TIMESTAMP,
     updated_at    TIMESTAMP
+);
+
+-- ============================================================
+--  PATIENT CREDENTIALS
+-- ============================================================
+CREATE TABLE patient_credentials
+(
+    patient_id     UUID PRIMARY KEY,
+    email          TEXT,
+    phone          TEXT,
+    password_hash  TEXT,
+    created_at     TIMESTAMP,
+    updated_at     TIMESTAMP
 );
 
 -- Lookup table for login
@@ -247,7 +259,7 @@ CREATE TABLE appointments_by_id
     clinic_id           UUID,
     appointment_date    DATE,
     scheduled_time      TIMESTAMP,
-    status              TEXT, -- SCHEDULED | CONFIRMED | CANCELLED | COMPLETED | NO_SHOW | CANCELLED
+    status              TEXT, -- SCHEDULED | CONFIRMED | CANCELLED | COMPLETED | NO_SHOW
     reason_for_visit    TEXT,
     doctor_notes        TEXT,
     cancellation_reason TEXT,
@@ -380,8 +392,26 @@ CREATE TABLE doctor_reviews
     rating       INT,
     comment      TEXT,
     created_at   TIMESTAMP,
+    PRIMARY KEY (doctor_id, patient_id)
+);
+
+CREATE TABLE doctor_reviews_by_time
+(
+    doctor_id    UUID,
+    created_at   TIMESTAMP,
+    patient_id   UUID,
+    patient_name TEXT,
+    rating       INT,
+    comment      TEXT,
     PRIMARY KEY (doctor_id, created_at, patient_id)
 ) WITH CLUSTERING ORDER BY (created_at DESC, patient_id ASC);
+
+CREATE TABLE doctor_rating_summary
+(
+    doctor_id    UUID PRIMARY KEY,
+    total_rating COUNTER,
+    review_count COUNTER
+);
 
 -- ============================================================
 --  ADMINS
